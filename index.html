@@ -12,6 +12,8 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 
   <link rel="stylesheet" href="./style.css" />
+  <!-- Empty favicon: stops the browser's automatic /favicon.ico request (a JSON 404 on the Node server). -->
+  <link rel="icon" href="data:," />
 </head>
 <body>
   <header class="topbar">
@@ -24,12 +26,15 @@
       <div class="stat"><span class="stat-num" id="stat-total">0</span><span class="stat-label">shown</span></div>
       <div class="stat"><span class="stat-num" id="stat-districts">0</span><span class="stat-label">districts</span></div>
       <div class="stat"><span class="stat-num" id="stat-sectors">0</span><span class="stat-label">sectors</span></div>
-      <div class="stat"><span class="stat-num" id="stat-contacts">0</span><span class="stat-label">with contacts</span></div>
+      <div class="stat"><span class="stat-num" id="stat-contacts">0</span><span class="stat-label">contacts</span></div>
     </div>
   </header>
 
   <div class="controls">
-    <input type="search" id="search" class="search" placeholder="Search name, sector, industry, district…" autocomplete="off" aria-label="Search startups" />
+    <div class="search-wrap">
+      <input type="search" id="search" class="search" placeholder="Search name, sector, industry, district…" autocomplete="off" aria-label="Search startups" aria-keyshortcuts="/" />
+      <kbd class="search-kbd" aria-hidden="true">/</kbd>
+    </div>
     <select id="filter-district" class="select" aria-label="Filter by district"><option value="">All districts</option></select>
     <select id="filter-sector" class="select" aria-label="Filter by sector"><option value="">All sectors</option></select>
     <label class="toggle">
@@ -49,16 +54,36 @@
   <main class="split">
     <section class="pane pane-map" id="pane-map">
       <div id="map"></div>
+      <div class="legend" role="note" aria-label="Pin colours">
+        <span class="legend-item"><i class="legend-dot is-contact" aria-hidden="true"></i>Public contacts</span>
+        <span class="legend-item"><i class="legend-dot is-registry" aria-hidden="true"></i>Registry only</span>
+        <span class="legend-item"><i class="legend-dot is-user" aria-hidden="true"></i>Community-added</span>
+      </div>
     </section>
     <section class="pane pane-list" id="pane-list">
-      <ul id="list" class="list" aria-label="Startup list"></ul>
-      <div id="empty" class="empty" hidden>No startups match your filters.</div>
+      <div class="list-head">
+        <span class="list-count" id="list-count">Loading…</span>
+        <label class="sort">
+          <span>Sort</span>
+          <select id="sort" class="select select-sm" aria-label="Sort list">
+            <option value="district">District</option>
+            <option value="name">Name A–Z</option>
+            <option value="contacts">Contacts first</option>
+          </select>
+        </label>
+      </div>
+      <ul id="list" class="list" role="group" aria-label="Startup list"></ul>
+      <div id="empty" class="empty" hidden>
+        <strong>No startups match</strong>
+        <span>Try fewer filters or a different spelling.</span>
+        <button type="button" id="empty-reset" class="btn-secondary">Clear filters</button>
+      </div>
     </section>
   </main>
 
   <!-- Detail drawer -->
   <div id="detail-backdrop" class="detail-backdrop" hidden></div>
-  <aside id="detail" class="detail" hidden aria-label="Startup details">
+  <aside id="detail" class="detail" role="dialog" aria-modal="true" aria-labelledby="detail-title" hidden>
     <button class="detail-close" id="detail-close" type="button" aria-label="Close details">&times;</button>
     <div id="detail-body"></div>
   </aside>
@@ -92,10 +117,16 @@
         </label>
 
         <label class="field">
-          <span>City / district <em class="req">*</em></span>
-          <input type="text" id="f-district" name="district" maxlength="80" list="district-options" required autocomplete="off" />
+          <span>District <em class="req">*</em></span>
+          <input type="text" id="f-district" name="district" maxlength="80" list="district-options" required autocomplete="off" placeholder="Pick a Madhya Pradesh district" />
           <datalist id="district-options"></datalist>
           <small class="field-err" data-for="district"></small>
+        </label>
+
+        <label class="field">
+          <span>City / town <span class="opt">(optional)</span></span>
+          <input type="text" id="f-city" name="city" maxlength="80" autocomplete="off" placeholder="e.g. Pithampur" />
+          <small class="field-err" data-for="city"></small>
         </label>
 
         <label class="field">
@@ -166,7 +197,7 @@
         </label>
       </div>
 
-      <div id="verify-result" class="verify-result" hidden></div>
+      <div id="verify-result" class="verify-result" tabindex="-1" hidden></div>
 
       <div class="form-actions">
         <button type="button" id="verify-btn" class="verify-btn">Verify in directory</button>
@@ -179,7 +210,7 @@
   <!-- Toast / status region -->
   <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
 
-  <div id="loading" class="loading">Loading startup data…</div>
+  <div id="loading" class="loading" role="status">Loading startup data…</div>
 
   <!-- Leaflet -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

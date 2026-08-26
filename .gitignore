@@ -2,4 +2,23 @@
 data/user_startups.json
 data/.user_startups.*.tmp
 
+# Dependencies / tooling
 node_modules/
+__pycache__/
+*.pyc
+
+# Local scratch: agent task files and QA copies of the data
+*-task.txt
+qa-data/
+qa_check.py
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Local env / secrets (MP_ADMIN_TOKEN etc.)
+.env
+.env.*

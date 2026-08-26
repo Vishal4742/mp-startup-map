@@ -27,6 +27,7 @@ Optional environment:
 - `MP_ALLOWED_HOSTS` — comma-separated extra hostnames accepted in the `Host` header
   (defaults already allow `localhost`, `127.0.0.1`, `::1`). Set this only when you
   intentionally serve the app under another hostname.
+- `NODE_ENV=test` — silences request-error logging (the test suite sets this itself).
 
 `package.json` scripts: `npm start`, `npm test`, `npm run check`.
 
@@ -39,7 +40,8 @@ when the API is unavailable (the Add / Verify features need the Node server):
 python -m http.server 8000
 ```
 
-Map tiles need an internet connection; everything else runs offline.
+Map tiles and the Leaflet libraries (loaded from the unpkg CDN) need an internet
+connection; the data and the API run locally.
 
 ## API
 
@@ -61,8 +63,12 @@ the **normalized name**, the **official website hostname**, and the **case-insen
 number** against the registry, enriched dossiers, and previously-added user records.
 
 Validation on write: JSON body ≤ 64 KiB, `application/json` only, strict per-field length
-limits, `http`/`https` URLs only, conservative email/phone formats, and a small per-IP rate
-limit. The limiter covers every non-trivial endpoint — `GET /api/startups` (which serializes the
+limits, `district` canonicalised onto the known MP district list — case-insensitive, and a district
+named as a whole word inside the text counts (`Pithampur, Dhar` → `Dhar`; `Dharwad` does not) — with
+anything else a `400`,
+`http`/`https` URLs only, conservative email/phone formats, and a small per-IP rate
+limit. Every failure is a JSON envelope with an `error` code (`validation_failed`, `duplicate`,
+`rate_limited`, `write_forbidden`, `not_found`, …). The limiter covers every non-trivial endpoint — `GET /api/startups` (which serializes the
 full dataset and reads the user file on each call), the check/verify endpoints, and the write —
 returning `429` past the limit and recovering after the window. The rate-limit table prunes expired
 entries as it grows, so it stays bounded. The read-check-persist path for `POST /api/startups` is serialized
@@ -71,7 +77,7 @@ the same identity past the duplicate check.
 
 **Static serving is deliberately narrow.** The Node server only serves the public app shell —
 `/` (→ `index.html`), `/app.js`, and `/style.css`. Everything else (`server.js`, `package.json`,
-`tests/`, `.git/`, task files, and `data/*.json`) returns `404`, and path traversal stays
+`tests/`, `.git/`, docs, config, and `data/*.json`) returns a JSON `404`, and path traversal stays
 `403`/`404`. The frontend gets its data from the API (`/api/startups`) — including the district
 centroids, returned as `coords`, since `data/district_coords.json` is locked down too — not from
 static `data/*.json`; the pure-static fallback (`python -m http.server`, which *does* serve the
@@ -111,43 +117,59 @@ email/phone, public founder names). Never enter private personal contact details
 
 ## What's on screen
 
-- **Map (left):** OpenStreetMap tiles centered on MP; 656 clustered pins. Green = has a
-  dossier, orange = registry-only, blue = community-added. Click a pin for a popup or
-  "Full details →".
-- **List (right):** every startup matching the filters. Click to fly to its pin; double-click
-  for the detail drawer. Cards are keyboard-selectable (`role="button"`, focusable): **Enter**
-  opens the detail drawer, **Space** locates the pin on the map.
-- **Search / filters / stats:** live search across name, sector, industry, district; district
-  and sector dropdowns; "has contacts only" toggle; live stats bar.
-- **Add startup:** a prominent toolbar button opens an accessible modal form. **Verify in
-  directory** runs the duplicate check and shows the exact reasons; **Add** stays disabled
-  until verification passes with no duplicate. A successful add drops the record straight into
+- **Map (left):** OpenStreetMap tiles centered on MP; one clustered pin per startup — the 656
+  registry rows plus the dossier-only companies (about 720 in total). Green = has public
+  contact details (a linkable website, email or phone), orange = none listed yet, blue =
+  community-added. Click a pin for a popup or "Full details →".
+- **List (right):** every startup matching the filters, with a count and a sort (district,
+  name A–Z, contacts first). Registry names are shown title-cased with the legal suffix
+  de-emphasised (the raw name is still what search matches); the card's left edge carries the
+  same colour as its pin. Click to fly to the pin; double-click for the detail drawer. Cards are
+  keyboard-selectable (`role="button"`, focusable): **Enter** opens the detail drawer, **Space**
+  locates the pin on the map. The drawer has **Show on map** and, when known, **Website**.
+- **Search / filters / stats:** live search across name, sector, industry, district (press
+  **/** to jump to the search box); district and sector dropdowns; "has contacts only" toggle;
+  live stats bar; Reset is enabled only while a filter is active, and the empty state offers
+  **Clear filters**. A legend in the map corner explains the pin colours.
+- **Loading / errors:** card-shaped skeletons keep the layout stable while data loads; a
+  failed load shows the reason and a **Try again** button instead of a blank screen.
+- **Add startup:** a prominent toolbar button opens an accessible modal form (district must be
+  a Madhya Pradesh district from the list; city/town is optional). **Verify in directory** runs
+  the duplicate check and shows the exact reasons — or the server's actual refusal (rate limit,
+  host guard, …); **Add** stays disabled until verification passes with no duplicate. A successful add drops the record straight into
   the live map, list, and stats — no reload — and shows a toast.
 - **Mobile:** the split view becomes Map / List tabs; the form collapses to a single column.
 
 ## Data model
 
 - `tech_registry.json` — 656 DPIIT startups: `[name, dipp_no, sector, industry, district]`.
-- `enriched.json` — 80 dossiers: `Company`, `City`, `What they build`, `Website`,
-  `Public contact email`, `Public phone`, `Founder(s)`, `LinkedIn URL`, `Careers URL`, `Source`.
-- `district_coords.json` — real lat/lng of MP district HQs; pins get a small deterministic
-  jitter so co-located ones don't overlap.
-- `user_startups.json` (generated) — added records: `id`, `name`, `dipp`, `district`, `city`,
-  `sector`, `industry`, `description`, `website`, `email`, `phone`, `founders`, `linkedin`,
-  `careers`, `sources`, `source: "user"`, `createdAt`. Only official/public business contact
-  channels are stored — there are no private-contact fields in the schema.
+- `enriched.json` — 80 dossiers: `Company`, `City` (or `District` — the `_batch: "registry_gems"`
+  rows carry their location there instead), `What they build`, `Website`, `Public contact email`,
+  `Public phone`, `Founder(s)`, `LinkedIn URL`, `Careers URL`, `Source`, plus bookkeeping keys
+  `#` and `_batch`. `Company` strings look like `Legal Name / Brand (DIPPnnnnn)`; `Website` may
+  hold several URLs or a bare domain (`skylanedrone.com`); `Public phone` may list several
+  numbers with notes — the UI links the first.
+- `district_coords.json` — real lat/lng of MP district HQs, generated from
+  `data/district_coords.py` (`python3 data/district_coords.py > data/district_coords.json`);
+  pins get a small deterministic jitter so co-located ones don't overlap.
+- `user_startups.json` (generated) — added records: `id`, `name`, `dipp`, `district` (canonical
+  MP district), `city` (optional town), `sector`, `industry`, `description`, `website`, `email`,
+  `phone`, `founders`, `linkedin`, `careers`, `sources`, `source: "user"`, `createdAt`. Only
+  official/public business contact channels are stored — there are no private-contact fields in
+  the schema.
 
-Missing dossier fields read "not publicly listed" and render as-is. Nothing is fabricated.
+Placeholder dossier values ("Not publicly listed (…)", "n/a", "Not applicable", "No active
+website found …") render muted as *not publicly listed*. Nothing is fabricated.
 
 ## Testing
 
 ```bash
-node --test tests/server.test.js     # backend suite (node:test, no deps)
-node scripts/check-frontend.mjs      # frontend contract check (IDs, endpoints, security attrs)
-node --check server.js && node --check app.js
+npm test          # node --test tests/server.test.js — backend suite (node:test, no deps)
+npm run check     # syntax check + scripts/check-frontend.mjs (IDs, endpoints, security attrs)
 ```
 
-The tests copy the source JSON into a temp directory and never touch real data.
+The tests copy the source JSON into a temp directory (removed afterwards), never touch real
+data, and ignore any `MP_ADMIN_TOKEN` / `MP_ALLOWED_HOSTS` in your shell.
 
 ## Tech
 

@@ -5,8 +5,8 @@
  *
  * Node built-ins only. Serves the static frontend and a small JSON API for
  * browsing the directory and submitting new (public, business-only) startup
- * records. Designed for LOCAL prototype use — see README for the deployment
- * warning about the unauthenticated write route.
+ * records. Designed for LOCAL prototype use — see README for the write policy
+ * (loopback may write when no MP_ADMIN_TOKEN is set) and the deployment warning.
  *
  * Exports createAppServer(options) which returns a non-listening http.Server,
  * plus the pure helpers used by the test suite.
@@ -24,10 +24,12 @@ const ROOT = __dirname;
 // Pure helpers (exported for testing)
 // ============================================================
 
-// Mirror of the frontend normName so name matching is consistent both ways.
+// Mirror of the frontend normName (app.js) — keep the two byte-for-byte in sync
+// so name matching is consistent both ways.
 function normalizeName(s) {
   return String(s == null ? '' : s)
     .toLowerCase()
+    .replace(/^\s*m\/s\.?\s*/, '') // "M/s …" trade prefix is noise, not a "/" alias
     .split('(')[0].split('/')[0].split('→')[0]
     .replace(/private limited|pvt\.? ?ltd\.?|llp|limited|technologies|technology/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
@@ -48,15 +50,34 @@ function normalizeHostname(url) {
   return u.hostname.toLowerCase().replace(/^www\./, '') || null;
 }
 
-// Extract every http/https hostname from a free-text field (enriched Website can
-// hold multiple URLs, e.g. "https://a.com (parent: https://b.com)").
+// URL tokenising — mirrored by firstUrl in app.js; keep the patterns in sync.
+//   URL_RE:         http(s) URLs, stopping at whitespace and common punctuation.
+//   EMAIL_TOKEN_RE: blanked out before the bare-domain scan so "hello@x.com"
+//                   never yields "x.com".
+//   BARE_DOMAIN_RE: scheme-less sites the way the dossiers write them
+//                   ("skylanedrone.com", "textify.ai"). Deliberately lowercase-only
+//                   with a short TLD so prose like "Pvt.Ltd" is not mistaken for one.
+const URL_RE = /https?:\/\/[^\s,()<>"']+/gi;
+const EMAIL_TOKEN_RE = /[^\s,;()<]+@[^\s,;()>]+/g;
+const BARE_DOMAIN_RE = /(^|[\s(])((?:[a-z0-9-]+\.)+[a-z]{2,6})(?=$|[\s,;:)/])/g;
+
+// Every URL (with a scheme) in a free-text field, in order. Scheme-less domains
+// are returned as https:// URLs. Enriched Website can hold several, e.g.
+// "https://a.com (parent: https://b.com)".
+function extractUrls(text) {
+  const str = String(text == null ? '' : text);
+  const out = str.match(URL_RE) || [];
+  const rest = str.replace(URL_RE, ' ').replace(EMAIL_TOKEN_RE, ' ');
+  let m;
+  BARE_DOMAIN_RE.lastIndex = 0;
+  while ((m = BARE_DOMAIN_RE.exec(rest)) !== null) out.push('https://' + m[2]);
+  return out;
+}
+
 function extractHostnames(text) {
   const out = [];
-  const re = /https?:\/\/[^\s,()<>"']+/gi;
-  const str = String(text == null ? '' : text);
-  let m;
-  while ((m = re.exec(str)) !== null) {
-    const h = normalizeHostname(m[0]);
+  for (const url of extractUrls(text)) {
+    const h = normalizeHostname(url);
     if (h) out.push(h);
   }
   return out;
@@ -64,6 +85,28 @@ function extractHostnames(text) {
 
 function normalizeDipp(s) {
   return String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// Does `text` contain `name` as a whole word? ("Pithampur, Dhar" yes; "Dharwad" no.)
+function containsWord(text, name) {
+  return new RegExp('(^|[^a-z0-9])' + escapeRegExp(name) + '([^a-z0-9]|$)').test(text);
+}
+
+// Map free text ("indore", "Pithampur, Dhar") onto one of the known district
+// names, or null. Exact match first, then the longest district name present as
+// a whole word — the same rule as districtFromText in app.js, so the client
+// and server pin a record to the same district.
+function canonicalDistrict(text, districts) {
+  const t = String(text == null ? '' : text).trim().toLowerCase();
+  if (!t || !Array.isArray(districts)) return null;
+  const byLength = [...districts].sort((a, b) => b.length - a.length);
+  for (const d of byLength) if (t === d.toLowerCase()) return d;
+  for (const d of byLength) if (containsWord(t, d.toLowerCase())) return d;
+  return null;
 }
 
 // Extract the bare hostname (lowercase, no port, no IPv6 brackets) from a
@@ -158,7 +201,11 @@ function str(v) {
 }
 
 // Validate a raw proposed record. Returns { valid, errors, candidate }.
-function validateCandidate(input) {
+// When opts.districts (the district_coords keys) is given, `district` is
+// canonicalised onto that list and anything unrecognised is rejected — otherwise
+// a raw value would pin at the MP centroid and add a bogus filter entry. An
+// empty list rejects every district (fail closed) rather than storing raw text.
+function validateCandidate(input, opts = {}) {
   const errors = {};
   const src = input && typeof input === 'object' ? input : {};
 
@@ -181,8 +228,15 @@ function validateCandidate(input) {
 
   // Required
   if (!c.name) errors.name = 'Startup name is required.';
-  if (!c.district) errors.district = 'City / district is required.';
+  if (!c.district) errors.district = 'District is required.';
   if (!c.sector) errors.sector = 'Sector is required.';
+
+  // Canonical district (only when the caller knows the district list)
+  if (c.district && Array.isArray(opts.districts)) {
+    const canonical = canonicalDistrict(c.district, opts.districts);
+    if (canonical) c.district = canonical;
+    else errors.district = 'Choose a Madhya Pradesh district from the list (e.g. Indore, Bhopal).';
+  }
 
   // Length limits
   for (const [field, max] of Object.entries(LIMITS)) {
@@ -238,7 +292,12 @@ function buildIndex(datasets) {
   for (const e of datasets.enriched || []) {
     const company = e.Company || '';
     const entry = { source: 'enriched', name: company };
-    for (const part of company.split(/[\/(]/)) addName(normalizeName(part), entry);
+    // Company strings look like "Legal Name / Brand (DIPPnnnnn)": index each alias,
+    // but never the DPIIT suffix as a name — that is what the dipp index is for.
+    for (const part of company.split(/[\/(]/)) {
+      if (/^\s*DIPP\d+/i.test(part)) continue;
+      addName(normalizeName(part), entry);
+    }
     addName(normalizeName(company), entry);
     const dippMatch = (company.match(/DIPP\d+/i) || [])[0];
     if (dippMatch) addDipp(normalizeDipp(dippMatch), entry);
@@ -290,34 +349,42 @@ const MAX_BODY = 64 * 1024; // 64 KiB
 const DEFAULT_ALLOWED_HOSTS = ['localhost', '127.0.0.1', '::1'];
 
 // Only these public app assets are ever served statically. The data source is
-// the API (/api/startups); server internals, tests, task files and data/*.json
-// are never exposed. '/' maps to '/index.html'.
+// the API (/api/startups); everything else in the tree (server internals, tests,
+// docs, config, data/*.json) is never exposed. '/' maps to '/index.html'.
 const STATIC_ALLOW = new Set(['/index.html', '/app.js', '/style.css']);
 
+// Only the extensions STATIC_ALLOW can reach.
 const STATIC_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.map': 'application/json; charset=utf-8',
 };
 
 function createAppServer(options = {}) {
   const dataDir = options.dataDir || path.join(ROOT, 'data');
   const staticDir = options.staticDir || ROOT;
-  const adminToken = options.adminToken || process.env.MP_ADMIN_TOKEN || '';
+  // Option handling, the same for adminToken and allowedHosts: null/undefined
+  // means "use the environment"; an explicit string (or array of hosts) — even
+  // an empty one — wins, so a test or embedder can switch the env-configured
+  // token/hosts off. Anything else is a programming error, never coerced into a
+  // live secret or hostname.
+  if (options.adminToken != null && typeof options.adminToken !== 'string') {
+    throw new TypeError('createAppServer: adminToken must be a string');
+  }
+  const adminToken = options.adminToken == null ? (process.env.MP_ADMIN_TOKEN || '') : options.adminToken;
   const rateCfg = options.rateLimit || { max: 60, windowMs: 60 * 1000 };
   const testRemoteHeader = options.testRemoteHeader || null; // test-only override
 
   // Host allowlist (DNS-rebinding guard). Loopback names are always allowed;
   // intentional deployments add hostnames via the allowedHosts option or the
   // MP_ALLOWED_HOSTS env var (comma-separated).
-  const extraHosts = options.allowedHosts
-    || String(process.env.MP_ALLOWED_HOSTS || '').split(',');
+  const rawHosts = options.allowedHosts;
+  if (rawHosts != null && !Array.isArray(rawHosts) && typeof rawHosts !== 'string') {
+    throw new TypeError('createAppServer: allowedHosts must be an array or a comma-separated string');
+  }
+  const extraHosts = rawHosts == null
+    ? String(process.env.MP_ALLOWED_HOSTS || '').split(',')
+    : Array.isArray(rawHosts) ? rawHosts : rawHosts.split(',');
   const allowedHosts = [
     ...DEFAULT_ALLOWED_HOSTS,
     ...extraHosts.map((h) => String(h).trim().toLowerCase()).filter(Boolean),
@@ -330,7 +397,14 @@ function createAppServer(options = {}) {
   // once. coords is served through the API so data/*.json stays locked down.
   const registry = readJsonSafe(path.join(dataDir, 'tech_registry.json'), []);
   const enriched = readJsonSafe(path.join(dataDir, 'enriched.json'), []);
-  const coords = readJsonSafe(path.join(dataDir, 'district_coords.json'), {});
+  // coords must be a plain {district: [lat, lng]} object; anything else (null,
+  // a string, an array) is treated as missing so validation fails closed.
+  const rawCoords = readJsonSafe(path.join(dataDir, 'district_coords.json'), {});
+  const coords = rawCoords && typeof rawCoords === 'object' && !Array.isArray(rawCoords) ? rawCoords : {};
+  const districts = Object.keys(coords); // canonical district list for validation
+  if (!districts.length && process.env.NODE_ENV !== 'test') {
+    console.warn(`district_coords.json missing or empty in ${dataDir} — every submission will be rejected until it is restored.`);
+  }
   const userFile = path.join(dataDir, 'user_startups.json');
 
   const rate = new Map(); // ip -> { count, resetAt }
@@ -479,8 +553,8 @@ function createAppServer(options = {}) {
     if (rateLimited(remoteAddressOf(req))) return sendJson(res, 429, { error: 'rate_limited' });
     const body = await readBody(req, res);
     if (body === null) return; // response already sent
-    const v = validateCandidate(body);
-    if (!v.valid) return sendJson(res, 400, { valid: false, errors: v.errors, candidate: v.candidate });
+    const v = validateCandidate(body, { districts });
+    if (!v.valid) return sendJson(res, 400, { error: 'validation_failed', valid: false, errors: v.errors, candidate: v.candidate });
     const user = await readUserRecords();
     const dup = duplicateCheck(v.candidate, { registry, enriched, user });
     return sendJson(res, 200, { valid: true, errors: {}, candidate: v.candidate, duplicate: dup.duplicate, matches: dup.matches, checks: dup.checks });
@@ -502,8 +576,8 @@ function createAppServer(options = {}) {
     const body = await readBody(req, res);
     if (body === null) return;
 
-    const v = validateCandidate(body);
-    if (!v.valid) return sendJson(res, 400, { valid: false, errors: v.errors });
+    const v = validateCandidate(body, { districts });
+    if (!v.valid) return sendJson(res, 400, { error: 'validation_failed', valid: false, errors: v.errors });
 
     // Serialize read-check-persist so concurrent writers can't lose updates or
     // both slip the same identity past the duplicate check.
@@ -511,7 +585,7 @@ function createAppServer(options = {}) {
       const user = await readUserRecords();
       const dup = duplicateCheck(v.candidate, { registry, enriched, user });
       if (dup.duplicate) {
-        return { status: 409, body: { duplicate: true, matches: dup.matches, checks: dup.checks } };
+        return { status: 409, body: { error: 'duplicate', duplicate: true, matches: dup.matches, checks: dup.checks } };
       }
       const record = {
         id: 'u_' + crypto.randomUUID(),
@@ -572,19 +646,11 @@ function createAppServer(options = {}) {
     }
 
     // Only public app assets are served; everything else (server internals,
-    // tests, task files, data/*.json) is 404. The API is the data source.
-    if (!STATIC_ALLOW.has(rel)) {
-      res.statusCode = 404;
-      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      return res.end('Not found');
-    }
+    // tests, docs, config, data/*.json) is 404. The API is the data source.
+    if (!STATIC_ALLOW.has(rel)) return sendJson(res, 404, { error: 'not_found' });
 
     fs.stat(resolved, (err, stat) => {
-      if (err || !stat.isFile()) {
-        res.statusCode = 404;
-        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-        return res.end('Not found');
-      }
+      if (err || !stat.isFile()) return sendJson(res, 404, { error: 'not_found' });
       const type = STATIC_TYPES[path.extname(resolved).toLowerCase()] || 'application/octet-stream';
       res.statusCode = 200;
       res.setHeader('Content-Type', type);
@@ -624,18 +690,32 @@ function setSecurityHeaders(res) {
   res.setHeader('X-Frame-Options', 'DENY');
 }
 
+// host[:port] of a Host-header-style value, lowercased via the URL parser (the
+// same normalisation hostnameFromHost applies for the allowlist), or '' if unparsable.
+function normalizeHostPort(value) {
+  const s = String(value == null ? '' : value).trim();
+  if (!s) return '';
+  try {
+    return new URL('http://' + s).host.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
 // Reject cross-origin browser requests. Same-origin requests either omit Origin
-// or send one whose host matches the Host header.
+// or send one whose host[:port] matches the Host header (case-insensitively —
+// both sides go through the same normalisation).
 function originAllowed(req) {
   const origin = req.headers['origin'];
   if (!origin) return true; // non-CORS (curl, same-origin GET, server-to-server)
-  let host;
+  let originHost;
   try {
-    host = new URL(origin).host;
+    originHost = new URL(origin).host.toLowerCase();
   } catch {
     return false;
   }
-  return host === req.headers['host'];
+  const host = normalizeHostPort(req.headers['host']);
+  return !!host && originHost === host;
 }
 
 function sendJson(res, status, obj) {
@@ -657,8 +737,10 @@ module.exports = {
   createAppServer,
   normalizeName,
   normalizeHostname,
+  extractUrls,
   extractHostnames,
   normalizeDipp,
+  canonicalDistrict,
   isLoopback,
   writeAllowed,
   hostAllowed,

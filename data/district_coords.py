@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
-"""District HQ coordinates for Madhya Pradesh districts (lat, lng)."""
+"""District HQ coordinates for Madhya Pradesh districts (lat, lng).
+
+Source of data/district_coords.json — regenerate with:
+    python3 data/district_coords.py > data/district_coords.json
+Keep the key order in step with the JSON so the output is byte-identical.
+"""
 COORDS = {
+    "Balaghat": (21.8069, 80.1836),
     "Indore": (22.7196, 75.8577),
     "Bhopal": (23.2599, 77.4126),
     "Jabalpur": (23.1815, 79.9864),
@@ -59,10 +65,6 @@ COORDS = {
     "Maihar Division": (24.2720, 80.7510),
 }
 
-def get(district):
-    """Return (lat, lng) or a fallback near MP center."""
-    return COORDS.get(district.strip(), (23.5, 78.5))
-
 if __name__ == "__main__":
-    import json, sys
+    import json
     print(json.dumps(COORDS, indent=1))

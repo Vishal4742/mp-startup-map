@@ -19,12 +19,33 @@ const css = await read('style.css');
 const failures = [];
 const check = (cond, msg) => { if (!cond) failures.push(msg); };
 
+// Comment-free view of app.js, built in one token-aware pass: string and
+// template literals are kept verbatim (so a `//` or `/*` inside them never
+// opens a comment), block comments and `//`-to-end-of-line are removed. Checks
+// about "what the code does" run on this so commented-out code cannot satisfy them.
+const stripComments = (src) => src.replace(
+  /("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`)|\/\*[\s\S]*?\*\/|\/\/[^\n]*/g,
+  '$1'
+);
+const code = stripComments(app);
+
+// Body of a top-level function declaration: from `function NAME(` at column 0
+// to the first column-0 `}` that is followed by a blank line, EOF or another
+// top-level declaration — so a `}` inside a template literal does not end it.
+const fnBody = (name) => {
+  const m = code.match(new RegExp(
+    '^(?:async\\s+)?function ' + name + '\\([\\s\\S]*?\\n\\}(?=\\n(?:\\n|$|async |function |const |let |class |\\())',
+    'm'
+  ));
+  return m ? m[0] : '';
+};
+
 // Required element IDs in index.html.
 const requiredIds = [
   'map', 'search', 'filter-district', 'filter-sector', 'filter-contacts',
   'add-startup', 'add-modal', 'modal-backdrop', 'add-form', 'verify-btn',
   'submit-btn', 'verify-result', 'toast-region',
-  'f-name', 'f-dipp', 'f-district', 'f-sector', 'f-industry', 'f-description',
+  'f-name', 'f-dipp', 'f-district', 'f-city', 'f-sector', 'f-industry', 'f-description',
   'f-website', 'f-email', 'f-phone', 'f-founders', 'f-linkedin', 'f-careers', 'f-sources',
 ];
 for (const id of requiredIds) {
@@ -32,9 +53,18 @@ for (const id of requiredIds) {
 }
 
 // Accessibility / semantics.
-check(/role="dialog"/.test(html), 'add modal missing role="dialog"');
-check(/aria-modal="true"/.test(html), 'add modal missing aria-modal');
-check(/aria-live=/.test(html), 'missing an aria-live region');
+check(/id="add-modal"[^>]*role="dialog"/.test(html), 'add modal missing role="dialog"');
+check(/id="add-modal"[^>]*aria-modal="true"/.test(html), 'add modal missing aria-modal');
+check(/id="detail"[^>]*role="dialog"/.test(html), 'detail drawer missing role="dialog" (same modal interaction as the add form)');
+check(/id="detail"[^>]*aria-labelledby="detail-title"/.test(html), 'detail drawer must be labelled by its heading');
+check(code.includes('<h2 id="detail-title">'), 'app.js must render the detail heading with id="detail-title" (aria-labelledby target)');
+check(/aria-live="(polite|assertive)"/.test(html), 'missing a live aria-live region');
+// aria-modal="true" on both overlays means Tab must be contained inside them.
+check(app.includes('function containTab'), 'app.js must contain Tab focus inside aria-modal dialogs (containTab)');
+check(
+  /\n\s+containTab\(el\.detail\)/.test(fnBody('wireEvents')) && /\n\s+containTab\(\$\('add-modal'\)\)/.test(fnBody('wireAddStartup')),
+  'containTab must be attached to both the detail drawer (wireEvents) and the add modal (wireAddStartup)'
+);
 
 // Labels must state public/official-contact policy.
 check(/public/i.test(html) && /not personal/i.test(html), 'form must state public/official (not personal) contact policy');
@@ -49,19 +79,31 @@ for (const ep of ['/api/startups', '/api/startups/verify']) {
 // issued before any ./data/district_coords.json fetch, and api.coords must feed
 // COORDS. The static file is only a fallback (API-off / older build).
 {
-  const apiAt = app.indexOf("fetchJson('/api/startups')");
-  const staticCoordsAt = app.indexOf("fetchJson('./data/district_coords.json')");
-  check(apiAt !== -1, 'app.js must fetch /api/startups');
-  check(app.includes('api.coords'), 'app.js must read district centroids from api.coords');
+  // Judge execution order inside loadData itself: the API request must be
+  // awaited before any static coords fetch that appears in that body.
+  const loadBody = fnBody('loadData');
+  const apiHelper = fnBody('fetchApiStartups');
+  check(/fetch\('\/api\/startups'\)/.test(apiHelper), 'fetchApiStartups must request /api/startups');
+  const apiAt = loadBody.search(/await fetchApiStartups\(\)/);
+  check(apiAt !== -1, 'loadData must await fetchApiStartups()');
+  check(loadBody.includes('api.coords'), 'loadData must read district centroids from api.coords');
+  // The static coords file may be fetched from loadData's fallback branch only,
+  // and only after the API request.
+  check(code.split('district_coords.json').length - 1 === 1, 'district_coords.json may only be referenced from loadData (static fallback)');
+  const staticCoordsAt = loadBody.indexOf('district_coords.json');
   check(
-    staticCoordsAt === -1 || apiAt < staticCoordsAt,
-    'app.js must request /api/startups before fetching ./data/district_coords.json (API-first ordering)'
+    staticCoordsAt !== -1 && apiAt < staticCoordsAt,
+    'loadData must request /api/startups before fetching ./data/district_coords.json (API-first ordering)'
   );
 }
 
+// Data-merge contract: the registry_gems dossier batch carries its location in
+// `District` (no `City`), so the location helper must read both keys.
+check(/e\.City \|\| e\.District/.test(fnBody('dossierLocation')), 'dossierLocation must read the dossier District key as well as City');
+
 // Security: external links must use rel="noopener noreferrer"; no raw noopener-only.
 check(app.includes('rel="noopener noreferrer"'), 'app.js external links must use rel="noopener noreferrer"');
-check(!/rel="noopener"[^\s]/.test(app), 'found a bare rel="noopener" without noreferrer');
+check(!/rel="noopener"/.test(app), 'found a bare rel="noopener" without noreferrer');
 check(app.includes('function escapeHtml'), 'app.js missing escapeHtml (XSS guard)');
 check(!/\beval\(/.test(app) && !/new Function\(/.test(app), 'app.js must not use eval / Function constructor');
 
@@ -82,6 +124,9 @@ check(/<button type="button" class="popup-more"/.test(app), 'popup "Full details
 
 // Key behaviours present.
 check(app.includes('function verifyStartup'), 'app.js missing verifyStartup');
+// The server answers 429/403/413/415/500 with `{ error }` — never `{ duplicate }` —
+// so the verify flow must branch on the HTTP status before trusting the body.
+check(/\bres\.ok\b/.test(fnBody('verifyStartup')), 'verifyStartup must check res.ok before rendering the verify result');
 check(app.includes('function submitStartup'), 'app.js missing submitStartup');
 check(app.includes('function insertRecord'), 'app.js missing insertRecord (live update)');
 check(app.includes('function toast'), 'app.js missing toast helper');
@@ -91,7 +136,9 @@ check(app.includes('function toast'), 'app.js missing toast helper');
 // new pin. Assert the refresh helper exists and that insertRecord calls it.
 check(app.includes('function refreshDistrictRadii'), 'app.js must refresh marker radii for the affected district after an add');
 check(/setRadius\(/.test(app), 'app.js must call marker.setRadius to resize existing markers');
-check(/insertRecord[\s\S]*?refreshDistrictRadii\(/.test(app), 'insertRecord must call refreshDistrictRadii after inserting the new record');
+// Look inside the insertRecord body only (comments stripped) — a later
+// `function refreshDistrictRadii(` definition must not satisfy this check.
+check(/\n\s+refreshDistrictRadii\(/.test(fnBody('insertRecord')), 'insertRecord must call refreshDistrictRadii after inserting the new record');
 
 // CSS hooks.
 check(css.includes('.toast'), 'style.css missing .toast styles');

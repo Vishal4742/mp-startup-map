@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test \"tests/*.test.js\"",
+    "test": "node --test tests/server.test.js",
     "check": "node --check server.js && node --check app.js && node scripts/check-frontend.mjs"
   },
   "engines": {
