@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MP Startup Map — Madhya Pradesh Tech Startups</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Leaflet.markercluster -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo-dot"></span>
+      <h1>MP Startup Map</h1>
+      <span class="subtitle">Madhya Pradesh tech startups</span>
+    </div>
+    <div class="stats" id="stats" role="status" aria-live="polite">
+      <div class="stat"><span class="stat-num" id="stat-total">0</span><span class="stat-label">shown</span></div>
+      <div class="stat"><span class="stat-num" id="stat-districts">0</span><span class="stat-label">districts</span></div>
+      <div class="stat"><span class="stat-num" id="stat-sectors">0</span><span class="stat-label">sectors</span></div>
+      <div class="stat"><span class="stat-num" id="stat-contacts">0</span><span class="stat-label">with contacts</span></div>
+    </div>
+  </header>
+
+  <div class="controls">
+    <input type="search" id="search" class="search" placeholder="Search name, sector, industry, district…" autocomplete="off" aria-label="Search startups" />
+    <select id="filter-district" class="select" aria-label="Filter by district"><option value="">All districts</option></select>
+    <select id="filter-sector" class="select" aria-label="Filter by sector"><option value="">All sectors</option></select>
+    <label class="toggle">
+      <input type="checkbox" id="filter-contacts" />
+      <span>Has contacts only</span>
+    </label>
+    <button id="reset" class="reset" type="button">Reset</button>
+  </div>
+
+  <!-- Mobile tabs -->
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="map" type="button">Map</button>
+    <button class="tab" data-tab="list" type="button">List</button>
+  </div>
+
+  <main class="split">
+    <section class="pane pane-map" id="pane-map">
+      <div id="map"></div>
+    </section>
+    <section class="pane pane-list" id="pane-list">
+      <ul id="list" class="list" aria-label="Startup list"></ul>
+      <div id="empty" class="empty" hidden>No startups match your filters.</div>
+    </section>
+  </main>
+
+  <!-- Detail drawer -->
+  <div id="detail-backdrop" class="detail-backdrop" hidden></div>
+  <aside id="detail" class="detail" hidden aria-label="Startup details">
+    <button class="detail-close" id="detail-close" type="button" aria-label="Close details">&times;</button>
+    <div id="detail-body"></div>
+  </aside>
+
+  <div id="loading" class="loading">Loading startup data…</div>
+
+  <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
