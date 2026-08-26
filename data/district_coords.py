@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""District HQ coordinates for Madhya Pradesh districts (lat, lng)."""
+COORDS = {
+    "Indore": (22.7196, 75.8577),
+    "Bhopal": (23.2599, 77.4126),
+    "Jabalpur": (23.1815, 79.9864),
+    "Gwalior": (26.2183, 78.1828),
+    "Ujjain": (23.1793, 75.7849),
+    "Rewa": (24.5333, 81.3),
+    "Sagar": (23.8315, 78.7535),
+    "Chhindwara": (22.0579, 78.9402),
+    "Katni": (23.8376, 80.3923),
+    "Satna": (24.5745, 80.8322),
+    "Vidisha": (23.5228, 77.8082),
+    "Khargone": (21.8241, 75.6107),
+    "Khandwa": (21.8254, 76.3469),
+    "Dewas": (22.9676, 76.0502),
+    "Betul": (21.9069, 77.9039),
+    "Morena": (26.4976, 78.0011),
+    "Guna": (24.6553, 77.3123),
+    "Singrauli": (24.1994, 82.6688),
+    "Neemuch": (24.4687, 74.8707),
+    "Chhatarpur": (24.9165, 79.5814),
+    "Dhar": (22.0224, 75.4553),
+    "Hoshangabad": (22.7488, 77.7188),
+    "Shivpuri": (25.4230, 77.6629),
+    "Sehore": (23.1950, 77.0857),
+    "Damoh": (23.8330, 79.4404),
+    "Mandsaur": (24.0734, 75.0678),
+    "Seoni": (22.0943, 79.5462),
+    "Ratlam": (23.3315, 75.0367),
+    "Burhanpur": (21.3097, 76.2304),
+    "Raisen": (23.3327, 77.7825),
+    "Rajgarh": (24.0900, 76.7340),
+    "Panna": (24.7184, 80.1932),
+    "Tikamgarh": (24.9979, 78.8273),
+    "Ashoknagar": (24.5732, 77.7303),
+    "Shahdol": (23.2936, 81.3619),
+    "Sidhi": (24.3973, 81.8796),
+    "Harda": (22.3370, 77.0960),
+    "Datia": (25.6725, 78.4585),
+    "Narsinghpur": (22.9460, 79.1945),
+    "Barwani": (22.0333, 74.9750),
+    "Anuppur": (23.1570, 81.6800),
+    "Dindori": (22.9440, 81.0760),
+    "Umaria": (23.5250, 80.8370),
+    "Bhind": (26.5624, 78.7893),
+    "Sheopur": (25.6683, 76.6889),
+    "Agar Malwa": (23.7117, 76.0117),
+    "Shajapur": (23.4280, 76.2750),
+    "Jhabua": (22.7680, 74.5990),
+    "Alirajpur": (22.3550, 74.3520),
+    "Mandla": (22.1720, 80.3480),
+    "Dabra": (25.8900, 78.3290),
+    "Niwari": (25.4570, 78.7840),
+    "Maihar": (24.2720, 80.7510),
+    "Pandhurna": (21.5980, 78.5290),
+    "Mauganj": (24.6600, 81.5300),
+    "Maihar Division": (24.2720, 80.7510),
+}
+
+def get(district):
+    """Return (lat, lng) or a fallback near MP center."""
+    return COORDS.get(district.strip(), (23.5, 78.5))
+
+if __name__ == "__main__":
+    import json, sys
+    print(json.dumps(COORDS, indent=1))
