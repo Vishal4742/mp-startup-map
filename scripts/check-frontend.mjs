@@ -50,6 +50,21 @@ check(!/rel="noopener"[^\s]/.test(app), 'found a bare rel="noopener" without nor
 check(app.includes('function escapeHtml'), 'app.js missing escapeHtml (XSS guard)');
 check(!/\beval\(/.test(app) && !/new Function\(/.test(app), 'app.js must not use eval / Function constructor');
 
+// Frontend safety polish: the popup data-id must be escaped like all dynamic content.
+check(/data-id="\$\{escapeHtml\(s\.id\)\}"/.test(app), 'popup data-id must be escaped (escapeHtml(s.id))');
+
+// Accessibility: list cards must be keyboard-selectable (role=button/tabindex=0/Enter+Space).
+check(/setAttribute\('role', 'button'\)/.test(app), 'list cards must set role="button"');
+check(/setAttribute\('tabindex', '0'\)/.test(app), 'list cards must be focusable (tabindex="0")');
+check(/addEventListener\('keydown'/.test(app), 'list cards must handle keydown');
+check(/e\.key === 'Enter'/.test(app), 'list cards must handle the Enter key');
+check(/e\.key === ' '/.test(app), 'list cards must handle the Space key');
+// Enter opens the detail drawer -> a keyboard-accessible way that does not rely on double-click.
+check(/e\.key === 'Enter'[\s\S]{0,80}openDetail/.test(app), 'Enter on a card must open the detail drawer');
+
+// Accessibility: the popup "Full details" control must be a real (keyboard-accessible) button.
+check(/<button type="button" class="popup-more"/.test(app), 'popup "Full details" must be a real <button>');
+
 // Key behaviours present.
 check(app.includes('function verifyStartup'), 'app.js missing verifyStartup');
 check(app.includes('function submitStartup'), 'app.js missing submitStartup');

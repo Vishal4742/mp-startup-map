@@ -66,6 +66,28 @@ function normalizeDipp(s) {
   return String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '');
 }
 
+// Extract the bare hostname (lowercase, no port, no IPv6 brackets) from a
+// Host header value, or '' if it cannot be parsed.
+function hostnameFromHost(hostHeader) {
+  const s = String(hostHeader == null ? '' : hostHeader).trim();
+  if (!s) return '';
+  let hostname;
+  try {
+    hostname = new URL('http://' + s).hostname;
+  } catch {
+    return '';
+  }
+  return hostname.replace(/^\[/, '').replace(/\]$/, '').toLowerCase();
+}
+
+// DNS-rebinding guard: is the request's Host header on the allowlist? The
+// allowlist holds bare hostnames (no port); the port is ignored on comparison.
+function hostAllowed(hostHeader, allowedHosts) {
+  const hostname = hostnameFromHost(hostHeader);
+  if (!hostname) return false;
+  return allowedHosts.includes(hostname);
+}
+
 function isLoopback(addr) {
   if (!addr) return false;
   const a = String(addr);
@@ -256,6 +278,13 @@ function duplicateCheck(candidate, datasets) {
 // ============================================================
 
 const MAX_BODY = 64 * 1024; // 64 KiB
+const DEFAULT_ALLOWED_HOSTS = ['localhost', '127.0.0.1', '::1'];
+
+// Only these public app assets are ever served statically. The data source is
+// the API (/api/startups); server internals, tests, task files and data/*.json
+// are never exposed. '/' maps to '/index.html'.
+const STATIC_ALLOW = new Set(['/index.html', '/app.js', '/style.css']);
+
 const STATIC_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -275,12 +304,34 @@ function createAppServer(options = {}) {
   const rateCfg = options.rateLimit || { max: 60, windowMs: 60 * 1000 };
   const testRemoteHeader = options.testRemoteHeader || null; // test-only override
 
+  // Host allowlist (DNS-rebinding guard). Loopback names are always allowed;
+  // intentional deployments add hostnames via the allowedHosts option or the
+  // MP_ALLOWED_HOSTS env var (comma-separated).
+  const extraHosts = options.allowedHosts
+    || String(process.env.MP_ALLOWED_HOSTS || '').split(',');
+  const allowedHosts = [
+    ...DEFAULT_ALLOWED_HOSTS,
+    ...extraHosts.map((h) => String(h).trim().toLowerCase()).filter(Boolean),
+  ];
+
+  // How large the rate map may grow before expired entries are swept.
+  const pruneAfter = Number(rateCfg.pruneAfter) > 0 ? Number(rateCfg.pruneAfter) : 5000;
+
   // Registry + enriched are immutable source data — load once.
   const registry = readJsonSafe(path.join(dataDir, 'tech_registry.json'), []);
   const enriched = readJsonSafe(path.join(dataDir, 'enriched.json'), []);
   const userFile = path.join(dataDir, 'user_startups.json');
 
   const rate = new Map(); // ip -> { count, resetAt }
+
+  // Serializes the read-check-persist sequence of POST /api/startups so
+  // concurrent writers can't lose each other's updates (in-process mutex).
+  let writeChain = Promise.resolve();
+  function withWriteLock(fn) {
+    const run = writeChain.then(fn, fn);
+    writeChain = run.then(() => {}, () => {}); // keep the chain alive past errors
+    return run;
+  }
 
   function remoteAddressOf(req) {
     if (testRemoteHeader && req.headers[testRemoteHeader]) {
@@ -293,6 +344,10 @@ function createAppServer(options = {}) {
     const now = Date.now();
     let slot = rate.get(ip);
     if (!slot || now > slot.resetAt) {
+      // Prune expired entries when the map grows so it can't grow unbounded.
+      if (rate.size > pruneAfter) {
+        for (const [k, v] of rate) if (now > v.resetAt) rate.delete(k);
+      }
       slot = { count: 0, resetAt: now + rateCfg.windowMs };
       rate.set(ip, slot);
     }
@@ -311,6 +366,13 @@ function createAppServer(options = {}) {
 
   async function handle(req, res) {
     setSecurityHeaders(res);
+
+    // DNS-rebinding guard: reject any non-allowlisted Host before touching the
+    // API or static files. Loopback names are always allowed; deployments opt
+    // extra hosts in via allowedHosts / MP_ALLOWED_HOSTS.
+    if (!hostAllowed(req.headers['host'], allowedHosts)) {
+      return sendJson(res, 403, { error: 'host_not_allowed' });
+    }
 
     const url = new URL(req.url, 'http://localhost');
     const pathname = url.pathname;
@@ -429,22 +491,26 @@ function createAppServer(options = {}) {
     const v = validateCandidate(body);
     if (!v.valid) return sendJson(res, 400, { valid: false, errors: v.errors });
 
-    // Recheck duplicate under the write path.
-    const user = await readUserRecords();
-    const dup = duplicateCheck(v.candidate, { registry, enriched, user });
-    if (dup.duplicate) return sendJson(res, 409, { duplicate: true, matches: dup.matches, checks: dup.checks });
+    // Serialize read-check-persist so concurrent writers can't lose updates or
+    // both slip the same identity past the duplicate check.
+    const result = await withWriteLock(async () => {
+      const user = await readUserRecords();
+      const dup = duplicateCheck(v.candidate, { registry, enriched, user });
+      if (dup.duplicate) {
+        return { status: 409, body: { duplicate: true, matches: dup.matches, checks: dup.checks } };
+      }
+      const record = {
+        id: 'u_' + crypto.randomUUID(),
+        ...v.candidate,
+        source: 'user',
+        createdAt: new Date().toISOString(),
+      };
+      user.push(record);
+      await persistUserRecords(user);
+      return { status: 201, body: { ok: true, record } };
+    });
 
-    const record = {
-      id: 'u_' + crypto.randomUUID(),
-      ...v.candidate,
-      source: 'user',
-      createdAt: new Date().toISOString(),
-    };
-
-    user.push(record);
-    await persistUserRecords(user);
-
-    return sendJson(res, 201, { ok: true, record });
+    return sendJson(res, result.status, result.body);
   }
 
   async function readUserRecords() {
@@ -474,7 +540,14 @@ function createAppServer(options = {}) {
   }
 
   function serveStatic(req, res, pathname) {
-    let rel = decodeURIComponent(pathname);
+    let rel;
+    try {
+      rel = decodeURIComponent(pathname);
+    } catch (err) {
+      // Malformed percent-encoding (URIError) -> clean 400, never a 500.
+      if (err instanceof URIError) return sendJson(res, 400, { error: 'bad_request' });
+      throw err;
+    }
     if (rel === '/' || rel === '') rel = '/index.html';
 
     // Resolve within staticDir and guard against path traversal.
@@ -482,6 +555,14 @@ function createAppServer(options = {}) {
     const base = path.resolve(staticDir);
     if (resolved !== base && !resolved.startsWith(base + path.sep)) {
       return sendJson(res, 403, { error: 'forbidden' });
+    }
+
+    // Only public app assets are served; everything else (server internals,
+    // tests, task files, data/*.json) is 404. The API is the data source.
+    if (!STATIC_ALLOW.has(rel)) {
+      res.statusCode = 404;
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      return res.end('Not found');
     }
 
     fs.stat(resolved, (err, stat) => {
@@ -497,6 +578,9 @@ function createAppServer(options = {}) {
       fs.createReadStream(resolved).pipe(res);
     });
   }
+
+  // Introspection hook for tests (bounded-growth assertions). Not used by the app.
+  server._rate = rate;
 
   return server;
 }
@@ -563,6 +647,7 @@ module.exports = {
   normalizeDipp,
   isLoopback,
   writeAllowed,
+  hostAllowed,
   validateCandidate,
   duplicateCheck,
 };

@@ -22,6 +22,7 @@ const {
   duplicateCheck,
   isLoopback,
   writeAllowed,
+  hostAllowed,
 } = require('../server.js');
 
 const REPO_DATA = path.join(__dirname, '..', 'data');
@@ -403,4 +404,219 @@ test('CORS: cross-origin request is rejected', async () => {
     });
     assert.strictEqual(res.status, 403);
   });
+});
+
+// ========================================================================
+// Finding 1 — Host / DNS-rebinding hardening
+// ========================================================================
+
+test('hostAllowed accepts loopback names (with/without port) and rejects others', () => {
+  const allow = ['localhost', '127.0.0.1', '::1'];
+  assert.strictEqual(hostAllowed('127.0.0.1:8000', allow), true);
+  assert.strictEqual(hostAllowed('localhost:8000', allow), true);
+  assert.strictEqual(hostAllowed('localhost', allow), true);
+  assert.strictEqual(hostAllowed('[::1]:8000', allow), true);
+  assert.strictEqual(hostAllowed('LOCALHOST:8000', allow), true);
+  assert.strictEqual(hostAllowed('evil.example', allow), false);
+  assert.strictEqual(hostAllowed('127.0.0.1.evil.example', allow), false);
+  assert.strictEqual(hostAllowed('', allow), false);
+  assert.strictEqual(hostAllowed(undefined, allow), false);
+});
+
+test('rejects a non-allowlisted Host header before handling (DNS-rebinding guard)', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const res = await request(port, 'GET', '/api/health', { headers: { host: 'evil.example' } });
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(res.json.error, 'host_not_allowed');
+  });
+});
+
+test('rejects an evil Host even with a matching evil Origin', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const res = await request(port, 'GET', '/api/health', {
+      headers: { host: 'evil.example', origin: 'http://evil.example' },
+    });
+    assert.strictEqual(res.status, 403);
+    assert.strictEqual(res.json.error, 'host_not_allowed');
+  });
+});
+
+test('allows an allowlisted localhost Host', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const res = await request(port, 'GET', '/api/health', { headers: { host: 'localhost:' + port } });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.json.ok, true);
+  });
+});
+
+test('default 127.0.0.1:ephemeral-port Host keeps working', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    // request() sends Host: 127.0.0.1:<port> by default.
+    const res = await request(port, 'GET', '/api/health');
+    assert.strictEqual(res.status, 200);
+  });
+});
+
+test('allowedHosts option adds an intentional deployment host (MP_ALLOWED_HOSTS)', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir, { allowedHosts: ['startups.mp.example'] }), async ({ port }) => {
+    const ok = await request(port, 'GET', '/api/health', { headers: { host: 'startups.mp.example' } });
+    assert.strictEqual(ok.status, 200);
+    // Loopback still allowed alongside the extra host.
+    const loop = await request(port, 'GET', '/api/health', { headers: { host: 'localhost' } });
+    assert.strictEqual(loop.status, 200);
+    // Anything else still rejected.
+    const evil = await request(port, 'GET', '/api/health', { headers: { host: 'evil.example' } });
+    assert.strictEqual(evil.status, 403);
+  });
+});
+
+// ========================================================================
+// Finding 2 — Static-file exposure
+// ========================================================================
+
+test('static serving is limited to public app assets', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const idx = await request(port, 'GET', '/');
+    assert.strictEqual(idx.status, 200);
+    const indexHtml = await request(port, 'GET', '/index.html');
+    assert.strictEqual(indexHtml.status, 200);
+    const appJs = await request(port, 'GET', '/app.js');
+    assert.strictEqual(appJs.status, 200);
+    const cssRes = await request(port, 'GET', '/style.css');
+    assert.strictEqual(cssRes.status, 200);
+  });
+});
+
+test('server internals, tests, task files and data are not served (404)', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    for (const p of [
+      '/server.js',
+      '/package.json',
+      '/tests/server.test.js',
+      '/data/tech_registry.json',
+      '/data/enriched.json',
+      '/fix-platform-task.txt',
+      '/.git/config',
+      '/scripts/check-frontend.mjs',
+    ]) {
+      const r = await request(port, 'GET', p);
+      assert.strictEqual(r.status, 404, p + ' should be 404, got ' + r.status);
+    }
+  });
+});
+
+test('path traversal stays 403/404', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const enc = await request(port, 'GET', '/..%2f..%2fserver.js');
+    assert.ok(enc.status === 403 || enc.status === 404, 'encoded traversal got ' + enc.status);
+    const dotdot = await request(port, 'GET', '/../../package.json');
+    assert.ok(dotdot.status === 403 || dotdot.status === 404, 'dotdot got ' + dotdot.status);
+  });
+});
+
+// ========================================================================
+// Finding 5 — Malformed path
+// ========================================================================
+
+test('malformed percent-encoding in the path returns a clean 400', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const r = await request(port, 'GET', '/%E0%A4%A');
+    assert.strictEqual(r.status, 400);
+    assert.strictEqual(r.json.error, 'bad_request');
+  });
+});
+
+// ========================================================================
+// Finding 3 — Lost-update race (serialized writes)
+// ========================================================================
+
+test('concurrent unique POSTs both persist (no lost update)', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const mk = (n) => request(port, 'POST', '/api/startups', {
+      headers: { 'content-type': 'application/json' },
+      body: {
+        name: 'Concurrent Unique ' + n + ' ZZZ 2026',
+        district: 'Indore',
+        sector: 'SaaS',
+        website: 'https://concurrent-' + n + '-zzz-2026.example',
+      },
+    });
+    const [a, b] = await Promise.all([mk('A'), mk('B')]);
+    assert.strictEqual(a.status, 201);
+    assert.strictEqual(b.status, 201);
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, 'user_startups.json'), 'utf8'));
+    assert.strictEqual(saved.length, 2, 'both unique records must persist');
+  });
+});
+
+test('concurrent same-identity POSTs: exactly one 201, the other 409', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const body = {
+      name: 'Race Identity ZZZ 2026',
+      district: 'Bhopal',
+      sector: 'FinTech',
+      website: 'https://race-identity-zzz-2026.example',
+    };
+    const mk = () => request(port, 'POST', '/api/startups', {
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+    const results = await Promise.all([mk(), mk()]);
+    const statuses = results.map((r) => r.status).sort();
+    assert.deepStrictEqual(statuses, [201, 409]);
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, 'user_startups.json'), 'utf8'));
+    assert.strictEqual(saved.length, 1, 'only one identical record may persist');
+  });
+});
+
+// ========================================================================
+// Finding 4 — Rate-limit map (429 + pruning / bounded growth)
+// ========================================================================
+
+test('rate limiting returns 429 past the limit and recovers after the window', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir, { rateLimit: { max: 1, windowMs: 150 } }), async ({ port }) => {
+    const ok = await request(port, 'GET', '/api/startups/check?name=foo');
+    assert.strictEqual(ok.status, 200);
+    const limited = await request(port, 'GET', '/api/startups/check?name=foo');
+    assert.strictEqual(limited.status, 429);
+    await new Promise((r) => setTimeout(r, 220));
+    const recovered = await request(port, 'GET', '/api/startups/check?name=foo');
+    assert.strictEqual(recovered.status, 200);
+  });
+});
+
+test('rate-limit map prunes expired entries and stays bounded', async () => {
+  const dir = makeTempDataDir();
+  await withServer(
+    baseOpts(dir, { rateLimit: { max: 100, windowMs: 20, pruneAfter: 5 }, testRemoteHeader: 'x-test-remote' }),
+    async ({ port, server }) => {
+      // First wave of many distinct IPs — creates many entries.
+      for (let i = 0; i < 20; i++) {
+        await request(port, 'GET', '/api/startups/check?name=foo', { headers: { 'x-test-remote': '10.0.0.' + i } });
+      }
+      // Let the first wave expire past the tiny window.
+      await new Promise((r) => setTimeout(r, 60));
+      // Second wave — each new slot past the prune threshold sweeps expired entries.
+      for (let i = 0; i < 10; i++) {
+        await request(port, 'GET', '/api/startups/check?name=foo', { headers: { 'x-test-remote': '10.1.0.' + i } });
+      }
+      assert.ok(server._rate, 'rate map should be exposed for introspection');
+      assert.ok(
+        server._rate.size <= 15,
+        'rate map should be pruned (size=' + server._rate.size + ', would be 30 unpruned)'
+      );
+    }
+  );
 });

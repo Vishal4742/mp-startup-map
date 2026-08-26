@@ -332,7 +332,7 @@ function popupHtml(s) {
     <div class="popup-meta">${escapeHtml(s.sector || '—')}${s.industry ? ' · ' + escapeHtml(s.industry) : ''}</div>
     <div class="popup-meta">📍 ${escapeHtml(s.district)}</div>
     ${links ? `<div class="popup-links">${links}</div>` : ''}
-    <span class="popup-more" data-id="${s.id}">Full details →</span>
+    <button type="button" class="popup-more" data-id="${escapeHtml(s.id)}">Full details →</button>
   `;
 }
 
@@ -371,6 +371,10 @@ function render() {
     const li = document.createElement('li');
     li.className = 'card';
     li.dataset.id = s.id;
+    // Keyboard-selectable: Enter opens the detail drawer, Space locates on the map.
+    li.setAttribute('role', 'button');
+    li.setAttribute('tabindex', '0');
+    li.setAttribute('aria-label', `${s.name} — Enter for details, Space to locate on map`);
     li.innerHTML = `
       <div class="card-title">
         <span class="name">${escapeHtml(s.name)}</span>
@@ -382,6 +386,15 @@ function render() {
         ${s.industry ? `<span class="chip">${escapeHtml(s.industry)}</span>` : ''}
       </div>`;
     li.addEventListener('click', () => flyTo(s.id));
+    li.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        openDetail(s.id);
+      } else if (e.key === ' ' || e.key === 'Spacebar') {
+        e.preventDefault();
+        flyTo(s.id);
+      }
+    });
     frag.appendChild(li);
   }
   el.list.appendChild(frag);

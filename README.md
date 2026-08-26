@@ -23,6 +23,9 @@ Optional environment:
 - `PORT` — listen port (default `8000`)
 - `HOST` — bind address (default `127.0.0.1`, loopback only)
 - `MP_ADMIN_TOKEN` — required token for **non-loopback** write requests (see safety policy)
+- `MP_ALLOWED_HOSTS` — comma-separated extra hostnames accepted in the `Host` header
+  (defaults already allow `localhost`, `127.0.0.1`, `::1`). Set this only when you
+  intentionally serve the app under another hostname.
 
 `package.json` scripts: `npm start`, `npm test`, `npm run check`.
 
@@ -40,7 +43,9 @@ Map tiles need an internet connection; everything else runs offline.
 ## API
 
 All endpoints are same-origin only and send strict security headers (CSP, `X-Content-Type-Options`,
-`Referrer-Policy`, `frame-ancestors 'none'`).
+`Referrer-Policy`, `frame-ancestors 'none'`). Every request is also checked against a **Host
+allowlist** (`localhost` / `127.0.0.1` / `::1`, plus any `MP_ALLOWED_HOSTS`) before routing — a
+request carrying an unexpected `Host` header is rejected with `403` to blunt DNS-rebinding.
 
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
@@ -56,7 +61,17 @@ number** against the registry, enriched dossiers, and previously-added user reco
 
 Validation on write: JSON body ≤ 64 KiB, `application/json` only, strict per-field length
 limits, `http`/`https` URLs only, conservative email/phone formats, and a small per-IP rate
-limit on the check/verify/write endpoints.
+limit on the check/verify/write endpoints. The rate-limit table prunes expired entries as it
+grows, so it stays bounded. The read-check-persist path for `POST /api/startups` is serialized
+by an in-process mutex, so two concurrent submissions can't lose each other's write or both slip
+the same identity past the duplicate check.
+
+**Static serving is deliberately narrow.** The Node server only serves the public app shell —
+`/` (→ `index.html`), `/app.js`, and `/style.css`. Everything else (`server.js`, `package.json`,
+`tests/`, `.git/`, task files, and `data/*.json`) returns `404`, and path traversal stays
+`403`/`404`. The frontend gets its data from the API (`/api/startups`), not from static
+`data/*.json`; the pure-static fallback (`python -m http.server`, which *does* serve the JSON) is
+only for running without the Node backend.
 
 ## Persistence
 
@@ -88,7 +103,8 @@ email/phone, public founder names). Never enter private personal contact details
   dossier, orange = registry-only, blue = community-added. Click a pin for a popup or
   "Full details →".
 - **List (right):** every startup matching the filters. Click to fly to its pin; double-click
-  for the detail drawer.
+  for the detail drawer. Cards are keyboard-selectable (`role="button"`, focusable): **Enter**
+  opens the detail drawer, **Space** locates the pin on the map.
 - **Search / filters / stats:** live search across name, sector, industry, district; district
   and sector dropdowns; "has contacts only" toggle; live stats bar.
 - **Add startup:** a prominent toolbar button opens an accessible modal form. **Verify in
