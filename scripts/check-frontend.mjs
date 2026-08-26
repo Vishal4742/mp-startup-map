@@ -44,6 +44,21 @@ for (const ep of ['/api/startups', '/api/startups/verify']) {
   check(app.includes(ep), `app.js missing endpoint reference ${ep}`);
 }
 
+// Data-load contract: district_coords.json is locked down as a static file on the
+// Node server, so COORDS must come from the API first. The API request must be
+// issued before any ./data/district_coords.json fetch, and api.coords must feed
+// COORDS. The static file is only a fallback (API-off / older build).
+{
+  const apiAt = app.indexOf("fetchJson('/api/startups')");
+  const staticCoordsAt = app.indexOf("fetchJson('./data/district_coords.json')");
+  check(apiAt !== -1, 'app.js must fetch /api/startups');
+  check(app.includes('api.coords'), 'app.js must read district centroids from api.coords');
+  check(
+    staticCoordsAt === -1 || apiAt < staticCoordsAt,
+    'app.js must request /api/startups before fetching ./data/district_coords.json (API-first ordering)'
+  );
+}
+
 // Security: external links must use rel="noopener noreferrer"; no raw noopener-only.
 check(app.includes('rel="noopener noreferrer"'), 'app.js external links must use rel="noopener noreferrer"');
 check(!/rel="noopener"[^\s]/.test(app), 'found a bare rel="noopener" without noreferrer');

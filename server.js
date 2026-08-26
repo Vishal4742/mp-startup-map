@@ -317,9 +317,11 @@ function createAppServer(options = {}) {
   // How large the rate map may grow before expired entries are swept.
   const pruneAfter = Number(rateCfg.pruneAfter) > 0 ? Number(rateCfg.pruneAfter) : 5000;
 
-  // Registry + enriched are immutable source data — load once.
+  // Registry + enriched + district centroids are immutable source data — load
+  // once. coords is served through the API so data/*.json stays locked down.
   const registry = readJsonSafe(path.join(dataDir, 'tech_registry.json'), []);
   const enriched = readJsonSafe(path.join(dataDir, 'enriched.json'), []);
+  const coords = readJsonSafe(path.join(dataDir, 'district_coords.json'), {});
   const userFile = path.join(dataDir, 'user_startups.json');
 
   const rate = new Map(); // ip -> { count, resetAt }
@@ -391,7 +393,7 @@ function createAppServer(options = {}) {
     if (pathname === '/api/startups') {
       if (req.method === 'GET') {
         const user = await readUserRecords();
-        return sendJson(res, 200, { registry, enriched, user });
+        return sendJson(res, 200, { registry, enriched, user, coords });
       }
       if (req.method === 'POST') return handleCreate(req, res);
       return sendJson(res, 405, { error: 'method_not_allowed' });

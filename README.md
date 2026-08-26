@@ -50,7 +50,7 @@ request carrying an unexpected `Host` header is rejected with `403` to blunt DNS
 | Method | Path | Purpose |
 | ------ | ---- | ------- |
 | GET  | `/api/health` | Liveness: `{ ok: true, ... }` |
-| GET  | `/api/startups` | Combined data: `{ registry[656], enriched[80], user[] }` |
+| GET  | `/api/startups` | Combined data: `{ registry[656], enriched[80], user[], coords }` |
 | GET  | `/api/startups/check?name=&website=&dipp=` | Duplicate check; `{ duplicate, matches, checks }` |
 | POST | `/api/startups/verify` | Validate + duplicate-check a proposed record (no write) |
 | POST | `/api/startups` | Validate, re-check, and persist a new record → `201 { record }` |
@@ -69,9 +69,10 @@ the same identity past the duplicate check.
 **Static serving is deliberately narrow.** The Node server only serves the public app shell —
 `/` (→ `index.html`), `/app.js`, and `/style.css`. Everything else (`server.js`, `package.json`,
 `tests/`, `.git/`, task files, and `data/*.json`) returns `404`, and path traversal stays
-`403`/`404`. The frontend gets its data from the API (`/api/startups`), not from static
-`data/*.json`; the pure-static fallback (`python -m http.server`, which *does* serve the JSON) is
-only for running without the Node backend.
+`403`/`404`. The frontend gets its data from the API (`/api/startups`) — including the district
+centroids, returned as `coords`, since `data/district_coords.json` is locked down too — not from
+static `data/*.json`; the pure-static fallback (`python -m http.server`, which *does* serve the
+JSON) is only for running without the Node backend.
 
 ## Persistence
 

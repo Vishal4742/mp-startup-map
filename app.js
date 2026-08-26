@@ -107,25 +107,26 @@ async function fetchJson(path) {
 }
 
 async function loadData() {
-  // District centroids are always loaded from the static file.
-  const coords = await fetchJson('./data/district_coords.json');
-  COORDS = coords;
-  DISTRICT_NAMES = Object.keys(coords).sort((a, b) => b.length - a.length);
-
+  let coords = null;
   let registry = [];
   let enriched = [];
   let user = [];
 
-  // Prefer the API (registry + enriched + persisted user records combined).
+  // Prefer the API (registry + enriched + persisted user records + district
+  // centroids, all combined). data/*.json is locked down on the Node server, so
+  // COORDS must come from the API response here — not a separate static fetch.
   try {
     const api = await fetchJson('/api/startups');
     registry = Array.isArray(api.registry) ? api.registry : [];
     enriched = Array.isArray(api.enriched) ? api.enriched : [];
     user = Array.isArray(api.user) ? api.user : [];
+    coords = api.coords && typeof api.coords === 'object' ? api.coords : null;
     API_AVAILABLE = true;
   } catch (e) {
-    // Static fallback: works from any plain HTTP server without the backend.
+    // Static fallback: works from any plain HTTP server without the backend,
+    // which DOES serve data/*.json — so the centroids come from the static file.
     API_AVAILABLE = false;
+    coords = await fetchJson('./data/district_coords.json');
     registry = await fetchJson('./data/tech_registry.json');
     try {
       enriched = await fetchJson('./data/enriched.json');
@@ -139,6 +140,14 @@ async function loadData() {
       user = []; // no user file in pure-static mode
     }
   }
+
+  // The API may omit coords on older builds; fall back to the static file so the
+  // map still places pins.
+  if (!coords || !Object.keys(coords).length) {
+    coords = await fetchJson('./data/district_coords.json');
+  }
+  COORDS = coords;
+  DISTRICT_NAMES = Object.keys(coords).sort((a, b) => b.length - a.length);
 
   STARTUPS = mergeData(registry, enriched, user);
   for (const rec of STARTUPS) assignCoords(rec);

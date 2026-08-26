@@ -232,6 +232,19 @@ test('GET /api/startups combines registry, enriched and user records', async () 
   });
 });
 
+test('GET /api/startups includes the district coordinate map (Indore centroid)', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir), async ({ port }) => {
+    const res = await request(port, 'GET', '/api/startups');
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.json.coords && typeof res.json.coords === 'object', 'response must include coords map');
+    assert.deepStrictEqual(res.json.coords.Indore, [22.7196, 75.8577]);
+    // The map is served through the API so data/*.json can stay locked down.
+    const staticCoords = await request(port, 'GET', '/data/district_coords.json');
+    assert.strictEqual(staticCoords.status, 404, 'district_coords.json must not be a static file');
+  });
+});
+
 test('GET /api/startups recovers a missing user file as []', async () => {
   const dir = makeTempDataDir();
   assert.strictEqual(fs.existsSync(path.join(dir, 'user_startups.json')), false);
