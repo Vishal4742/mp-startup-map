@@ -309,8 +309,13 @@ function initMap() {
   });
 }
 
+// Count-based marker radius. Pins in a busier district read larger.
+function radiusForCount(count) {
+  return 5 + Math.min(11, Math.log2((count || 1) + 1) * 2.2);
+}
+
 function makeMarker(s, count) {
-  const radius = 5 + Math.min(11, Math.log2((count || 1) + 1) * 2.2);
+  const radius = radiusForCount(count);
   const color = s.isUser ? '#60a5fa' : s.hasContacts ? '#4ade80' : '#ff8f3f';
   const marker = L.circleMarker([s.lat, s.lng], {
     radius,
@@ -633,6 +638,14 @@ function collectForm() {
   return data;
 }
 
+// Transient admin token: read straight off the field, sent only as a header on
+// POST /api/startups. It is never part of collectForm() / the persisted record.
+function adminTokenHeader() {
+  const node = $('f-admin-token');
+  const val = node && node.value ? node.value.trim() : '';
+  return val ? { 'X-Admin-Token': val } : {};
+}
+
 function clearFieldErrors() {
   document.querySelectorAll('.field-err').forEach((n) => { n.textContent = ''; });
   document.querySelectorAll('.field.invalid').forEach((n) => n.classList.remove('invalid'));
@@ -747,7 +760,7 @@ async function submitStartup(ev) {
   try {
     const res = await fetch('/api/startups', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...adminTokenHeader() },
       body: JSON.stringify(collectForm()),
     });
     const payload = await res.json();
@@ -787,8 +800,23 @@ function insertRecord(record) {
   const marker = makeMarker(rec, counts[rec.district]);
   if (clusterGroup) clusterGroup.addLayer(marker);
 
+  // The new record bumps its district's count, which changes the count-based
+  // radius for EVERY pin in that district — refresh them all, not just the new
+  // one. Colours/filters/clustering are untouched.
+  refreshDistrictRadii(rec.district, counts);
+
   populateFilters();
   render();
+}
+
+// Resize every existing marker in a district to match its updated count.
+function refreshDistrictRadii(district, counts) {
+  const radius = radiusForCount(counts[district] || 1);
+  for (const s of STARTUPS) {
+    if (s.district !== district) continue;
+    const m = markerById.get(s.id);
+    if (m && typeof m.setRadius === 'function') m.setRadius(radius);
+  }
 }
 
 function toast(message, kind = 'info') {

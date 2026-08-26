@@ -100,15 +100,24 @@ function isLoopback(addr) {
   );
 }
 
-// Decide whether a mutating request may write. Loopback is always allowed in
-// local prototype mode; a non-loopback caller must present the admin token.
+// Decide whether a mutating request may write.
+//
+// When an admin token is configured, EVERY write must present the matching
+// X-Admin-Token — including loopback. This closes the reverse-proxy bypass: a
+// same-host proxy forwarding public traffic arrives as loopback, so trusting
+// loopback unconditionally would let it write without auth.
+//
+// When no token is configured we keep the local-prototype convenience: loopback
+// may write freely and any non-loopback caller is refused.
 function writeAllowed({ remoteAddress, adminToken, providedToken } = {}) {
-  if (isLoopback(remoteAddress)) return { allowed: true, reason: 'loopback' };
-  if (!adminToken) return { allowed: false, reason: 'remote-no-token-configured' };
-  if (providedToken && timingSafeEqual(providedToken, adminToken)) {
-    return { allowed: true, reason: 'admin-token' };
+  if (adminToken) {
+    if (providedToken && timingSafeEqual(providedToken, adminToken)) {
+      return { allowed: true, reason: 'admin-token' };
+    }
+    return { allowed: false, reason: 'bad-token' };
   }
-  return { allowed: false, reason: 'bad-token' };
+  if (isLoopback(remoteAddress)) return { allowed: true, reason: 'loopback' };
+  return { allowed: false, reason: 'remote-no-token-configured' };
 }
 
 function timingSafeEqual(a, b) {
@@ -392,6 +401,9 @@ function createAppServer(options = {}) {
 
     if (pathname === '/api/startups') {
       if (req.method === 'GET') {
+        // Rate-limited too: this serializes the full dataset and reads the user
+        // file on every call, so an unbounded GET flood is a cheap DoS.
+        if (rateLimited(remoteAddressOf(req))) return sendJson(res, 429, { error: 'rate_limited' });
         const user = await readUserRecords();
         return sendJson(res, 200, { registry, enriched, user, coords });
       }
@@ -660,8 +672,11 @@ if (require.main === module) {
   const host = process.env.HOST || '127.0.0.1';
   const server = createAppServer();
   server.listen(port, host, () => {
-    const mode = process.env.MP_ADMIN_TOKEN ? 'admin-token set' : 'loopback-write (local prototype)';
+    const tokenSet = !!process.env.MP_ADMIN_TOKEN;
+    const mode = tokenSet ? 'admin-token required for all writes' : 'loopback-write (local prototype)';
     console.log(`MP Startup Map server running at http://${host}:${port}  [${mode}]`);
-    console.log('Local prototype mode — do NOT expose the write route publicly. See README.');
+    if (!tokenSet) {
+      console.log('No MP_ADMIN_TOKEN set — loopback may write. Do NOT expose this mode publicly. See README.');
+    }
   });
 }

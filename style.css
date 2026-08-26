@@ -156,6 +156,8 @@ body {
 .field.invalid input, .field.invalid textarea { border-color: #f87171; }
 .field-err { color: #f87171; font-size: 11px; min-height: 0; }
 .field.invalid .field-err { min-height: 13px; }
+.field-hint { color: var(--text-faint); font-size: 11px; }
+.field-hint code { font-family: monospace; font-size: 10.5px; }
 
 .verify-result {
   margin: 16px 0 4px; padding: 12px 14px; border-radius: 10px;

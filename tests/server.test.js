@@ -110,7 +110,7 @@ test('isLoopback recognises loopback addresses', () => {
   assert.strictEqual(isLoopback('8.8.8.8'), false);
 });
 
-test('writeAllowed: loopback always, remote needs matching token', () => {
+test('writeAllowed: no token configured -> loopback writes, remote refused', () => {
   assert.strictEqual(writeAllowed({ remoteAddress: '127.0.0.1' }).allowed, true);
   assert.strictEqual(writeAllowed({ remoteAddress: '8.8.8.8' }).allowed, false);
   assert.strictEqual(
@@ -120,6 +120,25 @@ test('writeAllowed: loopback always, remote needs matching token', () => {
   assert.strictEqual(
     writeAllowed({ remoteAddress: '8.8.8.8', adminToken: 'secret', providedToken: 'wrong' }).allowed,
     false
+  );
+});
+
+test('writeAllowed: a configured token is required for ALL writes, even loopback', () => {
+  // Reverse-proxy safety: when a token is configured, a same-host (loopback)
+  // caller must still present the matching X-Admin-Token — no loopback bypass.
+  assert.strictEqual(writeAllowed({ remoteAddress: '127.0.0.1', adminToken: 'secret' }).allowed, false);
+  assert.strictEqual(
+    writeAllowed({ remoteAddress: '127.0.0.1', adminToken: 'secret', providedToken: 'secret' }).allowed,
+    true
+  );
+  assert.strictEqual(
+    writeAllowed({ remoteAddress: '127.0.0.1', adminToken: 'secret', providedToken: 'wrong' }).allowed,
+    false
+  );
+  // Remote with the right token is still allowed.
+  assert.strictEqual(
+    writeAllowed({ remoteAddress: '8.8.8.8', adminToken: 'secret', providedToken: 'secret' }).allowed,
+    true
   );
 });
 
@@ -607,6 +626,65 @@ test('rate limiting returns 429 past the limit and recovers after the window', a
     await new Promise((r) => setTimeout(r, 220));
     const recovered = await request(port, 'GET', '/api/startups/check?name=foo');
     assert.strictEqual(recovered.status, 200);
+  });
+});
+
+test('GET /api/startups is rate limited (429) past the limit and recovers after the window', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir, { rateLimit: { max: 1, windowMs: 150 } }), async ({ port }) => {
+    const ok = await request(port, 'GET', '/api/startups');
+    assert.strictEqual(ok.status, 200);
+    const limited = await request(port, 'GET', '/api/startups');
+    assert.strictEqual(limited.status, 429);
+    assert.strictEqual(limited.json.error, 'rate_limited');
+    await new Promise((r) => setTimeout(r, 220));
+    const recovered = await request(port, 'GET', '/api/startups');
+    assert.strictEqual(recovered.status, 200);
+    assert.strictEqual(recovered.json.registry.length, 656);
+  });
+});
+
+// ========================================================================
+// Warning — token policy / reverse-proxy safety
+// ========================================================================
+
+test('with an admin token configured, even a loopback write requires the token', async () => {
+  const dir = makeTempDataDir();
+  const body = {
+    name: 'Token Gated ZZZ 2026',
+    district: 'Indore',
+    sector: 'SaaS',
+    website: 'https://token-gated-zzz-2026.example',
+  };
+  await withServer(baseOpts(dir, { adminToken: 's3cret' }), async ({ port }) => {
+    // Loopback, no token -> refused (a same-host reverse proxy can't bypass auth).
+    const denied = await request(port, 'POST', '/api/startups', {
+      headers: { 'content-type': 'application/json' },
+      body,
+    });
+    assert.strictEqual(denied.status, 403);
+    assert.strictEqual(denied.json.reason, 'bad-token');
+    assert.strictEqual(fs.existsSync(path.join(dir, 'user_startups.json')), false);
+
+    // Loopback, matching token -> allowed.
+    const ok = await request(port, 'POST', '/api/startups', {
+      headers: { 'content-type': 'application/json', 'x-admin-token': 's3cret' },
+      body,
+    });
+    assert.strictEqual(ok.status, 201);
+  });
+});
+
+test('verify does not require the admin token even when one is configured', async () => {
+  const dir = makeTempDataDir();
+  await withServer(baseOpts(dir, { adminToken: 's3cret' }), async ({ port }) => {
+    const res = await request(port, 'POST', '/api/startups/verify', {
+      headers: { 'content-type': 'application/json' },
+      body: { name: 'Some Unique ZZZ 2026', district: 'Indore', sector: 'SaaS' },
+    });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.json.valid, true);
+    assert.strictEqual(res.json.duplicate, false);
   });
 });
 

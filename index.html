@@ -158,6 +158,12 @@
           <textarea id="f-sources" name="sources" maxlength="2000" rows="2" placeholder="Where did this info come from? Public pages, press, etc."></textarea>
           <small class="field-err" data-for="sources"></small>
         </label>
+
+        <label class="field field-wide">
+          <span>Admin token <span class="opt">(only for token-protected deployments)</span></span>
+          <input type="password" id="f-admin-token" maxlength="200" autocomplete="off" placeholder="Leave blank for local use" />
+          <small class="field-hint">Sent only with your submission as <code>X-Admin-Token</code>. Never stored with the record.</small>
+        </label>
       </div>
 
       <div id="verify-result" class="verify-result" hidden></div>

@@ -86,6 +86,13 @@ check(app.includes('function submitStartup'), 'app.js missing submitStartup');
 check(app.includes('function insertRecord'), 'app.js missing insertRecord (live update)');
 check(app.includes('function toast'), 'app.js missing toast helper');
 
+// After a community add, the district's count changes, so every marker in the
+// affected district must have its count-based radius refreshed — not just the
+// new pin. Assert the refresh helper exists and that insertRecord calls it.
+check(app.includes('function refreshDistrictRadii'), 'app.js must refresh marker radii for the affected district after an add');
+check(/setRadius\(/.test(app), 'app.js must call marker.setRadius to resize existing markers');
+check(/insertRecord[\s\S]*?refreshDistrictRadii\(/.test(app), 'insertRecord must call refreshDistrictRadii after inserting the new record');
+
 // CSS hooks.
 check(css.includes('.toast'), 'style.css missing .toast styles');
 check(css.includes('.modal'), 'style.css missing .modal styles');

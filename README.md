@@ -22,7 +22,8 @@ Optional environment:
 
 - `PORT` — listen port (default `8000`)
 - `HOST` — bind address (default `127.0.0.1`, loopback only)
-- `MP_ADMIN_TOKEN` — required token for **non-loopback** write requests (see safety policy)
+- `MP_ADMIN_TOKEN` — when set, **every** write (`POST /api/startups`) must carry a matching
+  `X-Admin-Token` header, loopback included (see safety policy)
 - `MP_ALLOWED_HOSTS` — comma-separated extra hostnames accepted in the `Host` header
   (defaults already allow `localhost`, `127.0.0.1`, `::1`). Set this only when you
   intentionally serve the app under another hostname.
@@ -61,8 +62,10 @@ number** against the registry, enriched dossiers, and previously-added user reco
 
 Validation on write: JSON body ≤ 64 KiB, `application/json` only, strict per-field length
 limits, `http`/`https` URLs only, conservative email/phone formats, and a small per-IP rate
-limit on the check/verify/write endpoints. The rate-limit table prunes expired entries as it
-grows, so it stays bounded. The read-check-persist path for `POST /api/startups` is serialized
+limit. The limiter covers every non-trivial endpoint — `GET /api/startups` (which serializes the
+full dataset and reads the user file on each call), the check/verify endpoints, and the write —
+returning `429` past the limit and recovering after the window. The rate-limit table prunes expired
+entries as it grows, so it stays bounded. The read-check-persist path for `POST /api/startups` is serialized
 by an in-process mutex, so two concurrent submissions can't lose each other's write or both slip
 the same identity past the duplicate check.
 
@@ -83,17 +86,25 @@ data and is git-ignored; the source `tech_registry.json`, `enriched.json`, and
 
 ## Safety policy (local-only) — read before deploying
 
-This is a **local prototype**. The write route (`POST /api/startups`) uses this policy:
+The write route (`POST /api/startups`) picks its policy from whether `MP_ADMIN_TOKEN` is set:
 
-- **Loopback requests** (`127.0.0.1` / `::1`) may write freely — the local prototype mode.
-- **Non-loopback requests** must send a matching `X-Admin-Token` header equal to
-  `MP_ADMIN_TOKEN`. Without the env var set, all remote writes are refused (`403`). The token
-  is never echoed back in any response.
+- **Token configured (`MP_ADMIN_TOKEN` set):** every write — **including loopback** — must send a
+  matching `X-Admin-Token` header (compared timing-safely). Loopback gets **no** bypass, so a
+  same-host reverse proxy forwarding public traffic (which arrives as `127.0.0.1`) cannot slip a
+  write past auth. A missing or wrong token is `403 { reason: "bad-token" }`. The token is never
+  echoed back in any response. Read-only routes — including `GET /api/startups` and
+  `POST /api/startups/verify` — never require the token.
+- **No token configured (local prototype):** loopback (`127.0.0.1` / `::1`) may write freely for
+  local convenience; every non-loopback request is refused (`403`).
 
-> **Deployment warning:** Do **not** expose the unauthenticated write route to the public
-> internet. If you must host this beyond localhost, bind carefully, set a strong
-> `MP_ADMIN_TOKEN`, put it behind an authenticated reverse proxy, and treat every submission
-> as untrusted. The loopback-write convenience exists purely for local use.
+The Add-startup form has a transient **Admin token** field: it is sent only as `X-Admin-Token` on
+the submission request and is never stored in the record or the schema. Leave it blank for local
+(no-token) use.
+
+> **Deployment warning:** If you host this beyond localhost, set a strong `MP_ADMIN_TOKEN` so
+> loopback carries no write privilege, bind carefully, keep it behind an authenticated reverse
+> proxy, and treat every submission as untrusted. With no token set the loopback-write convenience
+> is for local use only — do **not** expose that mode to the public internet.
 
 Only submit **publicly listed, official business** information (company website, business
 email/phone, public founder names). Never enter private personal contact details.
