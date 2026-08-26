@@ -1,0 +1,16 @@
+{
+  "name": "mp-startup-map",
+  "version": "1.0.0",
+  "description": "Interactive, secure local directory of Madhya Pradesh tech startups — Leaflet map + zero-dependency Node API.",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test \"tests/*.test.js\"",
+    "check": "node --check server.js && node --check app.js && node scripts/check-frontend.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {}
+}

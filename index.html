@@ -37,6 +37,7 @@
       <span>Has contacts only</span>
     </label>
     <button id="reset" class="reset" type="button">Reset</button>
+    <button id="add-startup" class="add-btn" type="button">+ Add startup</button>
   </div>
 
   <!-- Mobile tabs -->
@@ -61,6 +62,116 @@
     <button class="detail-close" id="detail-close" type="button" aria-label="Close details">&times;</button>
     <div id="detail-body"></div>
   </aside>
+
+  <!-- Add-startup modal -->
+  <div id="modal-backdrop" class="modal-backdrop" hidden></div>
+  <div id="add-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="add-modal-title" hidden>
+    <div class="modal-head">
+      <h2 id="add-modal-title">Add a startup to the directory</h2>
+      <button class="modal-close" id="add-close" type="button" aria-label="Close form">&times;</button>
+    </div>
+    <p class="modal-note">
+      Only submit <strong>publicly listed, official business</strong> information (company website,
+      business email/phone, public founder names). Do <strong>not</strong> enter private personal
+      contact details. Every submission is duplicate-checked against the DPIIT registry and existing
+      dossiers before it can be added.
+    </p>
+
+    <form id="add-form" novalidate>
+      <div class="form-grid">
+        <label class="field">
+          <span>Startup name <em class="req">*</em></span>
+          <input type="text" id="f-name" name="name" maxlength="200" required autocomplete="off" />
+          <small class="field-err" data-for="name"></small>
+        </label>
+
+        <label class="field">
+          <span>DPIIT number <span class="opt">(optional)</span></span>
+          <input type="text" id="f-dipp" name="dipp" maxlength="20" placeholder="DIPP12345" autocomplete="off" />
+          <small class="field-err" data-for="dipp"></small>
+        </label>
+
+        <label class="field">
+          <span>City / district <em class="req">*</em></span>
+          <input type="text" id="f-district" name="district" maxlength="80" list="district-options" required autocomplete="off" />
+          <datalist id="district-options"></datalist>
+          <small class="field-err" data-for="district"></small>
+        </label>
+
+        <label class="field">
+          <span>Sector <em class="req">*</em></span>
+          <input type="text" id="f-sector" name="sector" maxlength="100" list="sector-options" required autocomplete="off" />
+          <datalist id="sector-options"></datalist>
+          <small class="field-err" data-for="sector"></small>
+        </label>
+
+        <label class="field">
+          <span>Industry <span class="opt">(optional)</span></span>
+          <input type="text" id="f-industry" name="industry" maxlength="100" autocomplete="off" />
+          <small class="field-err" data-for="industry"></small>
+        </label>
+
+        <label class="field field-wide">
+          <span>What they build <span class="opt">(optional)</span></span>
+          <textarea id="f-description" name="description" maxlength="2000" rows="2"></textarea>
+          <small class="field-err" data-for="description"></small>
+        </label>
+
+        <label class="field">
+          <span>Official website <span class="opt">(public)</span></span>
+          <input type="url" id="f-website" name="website" maxlength="300" placeholder="https://…" autocomplete="off" />
+          <small class="field-err" data-for="website"></small>
+        </label>
+
+        <label class="field">
+          <span>Public business email <span class="opt">(not personal)</span></span>
+          <input type="email" id="f-email" name="email" maxlength="200" placeholder="contact@company.com" autocomplete="off" />
+          <small class="field-err" data-for="email"></small>
+        </label>
+
+        <label class="field">
+          <span>Public business phone <span class="opt">(not personal)</span></span>
+          <input type="text" id="f-phone" name="phone" maxlength="40" autocomplete="off" />
+          <small class="field-err" data-for="phone"></small>
+        </label>
+
+        <label class="field">
+          <span>Publicly listed founder(s) <span class="opt">(optional)</span></span>
+          <input type="text" id="f-founders" name="founders" maxlength="300" autocomplete="off" />
+          <small class="field-err" data-for="founders"></small>
+        </label>
+
+        <label class="field">
+          <span>LinkedIn URL <span class="opt">(optional)</span></span>
+          <input type="url" id="f-linkedin" name="linkedin" maxlength="300" placeholder="https://linkedin.com/company/…" autocomplete="off" />
+          <small class="field-err" data-for="linkedin"></small>
+        </label>
+
+        <label class="field">
+          <span>Careers URL <span class="opt">(optional)</span></span>
+          <input type="url" id="f-careers" name="careers" maxlength="300" placeholder="https://…/careers" autocomplete="off" />
+          <small class="field-err" data-for="careers"></small>
+        </label>
+
+        <label class="field field-wide">
+          <span>Source URLs / notes <span class="opt">(optional)</span></span>
+          <textarea id="f-sources" name="sources" maxlength="2000" rows="2" placeholder="Where did this info come from? Public pages, press, etc."></textarea>
+          <small class="field-err" data-for="sources"></small>
+        </label>
+      </div>
+
+      <div id="verify-result" class="verify-result" hidden></div>
+
+      <div class="form-actions">
+        <button type="button" id="verify-btn" class="verify-btn">Verify in directory</button>
+        <button type="submit" id="submit-btn" class="submit-btn" disabled>Add startup</button>
+        <span class="form-hint" id="form-hint">Verify first to enable Add.</span>
+      </div>
+    </form>
+  </div>
+
+  <!-- Toast / status region -->
+  <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
 
   <div id="loading" class="loading">Loading startup data…</div>
 

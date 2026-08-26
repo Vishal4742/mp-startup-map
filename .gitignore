@@ -1,0 +1,5 @@
+# Runtime-generated, user-submitted records (not source data)
+data/user_startups.json
+data/.user_startups.*.tmp
+
+node_modules/

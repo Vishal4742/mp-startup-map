@@ -98,23 +98,54 @@ function districtFromText(text) {
 // Data loading + merge
 // ============================================================
 
+let API_AVAILABLE = false;
+
+async function fetchJson(path) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error(`Failed to load ${path}: ${response.status}`);
+  return response.json();
+}
+
 async function loadData() {
-  // Registry + coords are required; enriched is optional (resilient).
-  const [registry, coords] = await Promise.all([
-    fetch('./data/tech_registry.json').then((r) => r.json()),
-    fetch('./data/district_coords.json').then((r) => r.json()),
-  ]);
+  // District centroids are always loaded from the static file.
+  const coords = await fetchJson('./data/district_coords.json');
   COORDS = coords;
   DISTRICT_NAMES = Object.keys(coords).sort((a, b) => b.length - a.length);
 
+  let registry = [];
   let enriched = [];
+  let user = [];
+
+  // Prefer the API (registry + enriched + persisted user records combined).
   try {
-    enriched = await fetch('./data/enriched.json').then((r) => r.json());
+    const api = await fetchJson('/api/startups');
+    registry = Array.isArray(api.registry) ? api.registry : [];
+    enriched = Array.isArray(api.enriched) ? api.enriched : [];
+    user = Array.isArray(api.user) ? api.user : [];
+    API_AVAILABLE = true;
   } catch (e) {
-    console.warn('enriched.json unavailable — continuing with registry data only.');
+    // Static fallback: works from any plain HTTP server without the backend.
+    API_AVAILABLE = false;
+    registry = await fetchJson('./data/tech_registry.json');
+    try {
+      enriched = await fetchJson('./data/enriched.json');
+    } catch (_) {
+      console.warn('enriched.json unavailable — continuing with registry data only.');
+    }
+    try {
+      user = await fetchJson('./data/user_startups.json');
+      if (!Array.isArray(user)) user = [];
+    } catch (_) {
+      user = []; // no user file in pure-static mode
+    }
   }
 
-  // Index registry by DIPP and by normalized name for matching dossiers.
+  STARTUPS = mergeData(registry, enriched, user);
+  for (const rec of STARTUPS) assignCoords(rec);
+}
+
+// Build the normalized, merged record list from the three datasets.
+function mergeData(registry, enriched, user) {
   const records = registry.map((row, i) => {
     const [name, dipp, sector, industry, district] = row;
     return {
@@ -132,7 +163,7 @@ async function loadData() {
   const byDipp = new Map();
   const byName = new Map();
   for (const rec of records) {
-    if (rec.dipp) byDipp.set(rec.dipp.toUpperCase(), rec);
+    if (rec.dipp) byDipp.set(String(rec.dipp).toUpperCase(), rec);
     const n = normName(rec.name);
     if (n && !byName.has(n)) byName.set(n, rec);
   }
@@ -157,14 +188,13 @@ async function loadData() {
       target.enriched = e;
       target.hasContacts = true;
     } else {
-      // Standalone notable startup not in the DPIIT registry rows.
       const cityText = e.City || company;
-      const district = districtFromText(cityText) || 'Indore'; // registry_gems w/o city are Indore-based
+      const district = districtFromText(cityText) || 'Indore';
       records.push({
         id: 's' + standaloneIdx++,
         name: company.replace(/\s*\(DIPP\d+\)/i, '').trim(),
         dipp: dippMatch || '',
-        sector: '',           // enriched has no registry sector; derive a label below
+        sector: '',
         industry: '',
         district: district,
         enriched: e,
@@ -178,15 +208,51 @@ async function loadData() {
     if (!rec.sector && rec.enriched) rec.sector = 'Notable startup';
   }
 
-  STARTUPS = records;
-
-  // Assign map coordinates (district centroid + deterministic jitter).
-  for (const rec of STARTUPS) {
-    const base = COORDS[rec.district] || MP_CENTER;
-    const [jx, jy] = hashJitter(rec.id + rec.name);
-    rec.lat = base[0] + jx;
-    rec.lng = base[1] + jy;
+  // Append user-submitted records.
+  let userIdx = 0;
+  for (const u of user) {
+    records.push(userToRecord(u, userIdx++));
   }
+
+  return records;
+}
+
+// Convert a persisted user record into the internal record + dossier shape.
+function userToRecord(u, idx) {
+  const district = (u.district && String(u.district).trim())
+    || districtFromText(u.city) || 'Unknown';
+  const enriched = {
+    Company: u.name || '',
+    City: u.city || district,
+    'What they build': u.description || '',
+    Website: u.website || '',
+    'Public contact email': u.email || '',
+    'Public phone': u.phone || '',
+    'Founder(s)': u.founders || '',
+    'LinkedIn URL': u.linkedin || '',
+    'Careers URL': u.careers || '',
+    Source: u.sources || '',
+    _user: true,
+  };
+  return {
+    id: u.id || ('u' + idx),
+    name: u.name || '',
+    dipp: u.dipp || '',
+    sector: u.sector || 'Community-added',
+    industry: u.industry || '',
+    district: district,
+    enriched: enriched,
+    hasContacts: !!(u.website || u.email || u.phone),
+    isUser: true,
+  };
+}
+
+// Assign map coordinates (district centroid + deterministic jitter).
+function assignCoords(rec) {
+  const base = COORDS[rec.district] || MP_CENTER;
+  const [jx, jy] = hashJitter(rec.id + rec.name);
+  rec.lat = base[0] + jx;
+  rec.lng = base[1] + jy;
 }
 
 // ============================================================
@@ -221,21 +287,7 @@ function initMap() {
 
   for (const s of STARTUPS) {
     const count = counts[s.district] || 1;
-    const radius = 5 + Math.min(11, Math.log2(count + 1) * 2.2);
-    const marker = L.circleMarker([s.lat, s.lng], {
-      radius,
-      color: s.hasContacts ? '#4ade80' : '#ff8f3f',
-      weight: 1.5,
-      fillColor: s.hasContacts ? '#4ade80' : '#ff8f3f',
-      fillOpacity: 0.55,
-    });
-    marker.bindPopup(popupHtml(s), { maxWidth: 280 });
-    marker.on('click', () => {
-      setActive(s.id, false);
-    });
-    marker._recId = s.id;
-    markerById.set(s.id, marker);
-    clusterGroup.addLayer(marker);
+    clusterGroup.addLayer(makeMarker(s, count));
   }
 
   map.addLayer(clusterGroup);
@@ -248,13 +300,30 @@ function initMap() {
   });
 }
 
+function makeMarker(s, count) {
+  const radius = 5 + Math.min(11, Math.log2((count || 1) + 1) * 2.2);
+  const color = s.isUser ? '#60a5fa' : s.hasContacts ? '#4ade80' : '#ff8f3f';
+  const marker = L.circleMarker([s.lat, s.lng], {
+    radius,
+    color,
+    weight: 1.5,
+    fillColor: color,
+    fillOpacity: 0.55,
+  });
+  marker.bindPopup(popupHtml(s), { maxWidth: 280 });
+  marker.on('click', () => setActive(s.id, false));
+  marker._recId = s.id;
+  markerById.set(s.id, marker);
+  return marker;
+}
+
 function popupHtml(s) {
   const web = s.enriched ? firstUrl(s.enriched.Website) : null;
   const email = s.enriched ? firstEmail(s.enriched['Public contact email']) : null;
   const phoneRaw = s.enriched && !isMissing(s.enriched['Public phone']) ? s.enriched['Public phone'] : null;
 
   let links = '';
-  if (web) links += `<a href="${escapeHtml(web)}" target="_blank" rel="noopener">🌐 ${escapeHtml(web.replace(/^https?:\/\//, ''))}</a>`;
+  if (web) links += `<a href="${escapeHtml(web)}" target="_blank" rel="noopener noreferrer">🌐 ${escapeHtml(web.replace(/^https?:\/\//, ''))}</a>`;
   if (email) links += `<a href="mailto:${escapeHtml(email)}">✉️ ${escapeHtml(email)}</a>`;
   if (phoneRaw) links += `<a href="tel:${escapeHtml(String(phoneRaw).replace(/[^\d+]/g, ''))}">📞 ${escapeHtml(phoneRaw)}</a>`;
 
@@ -354,7 +423,13 @@ function flyTo(id) {
   setActive(id, false);
 
   // On mobile, jump to the map tab so the fly-to is visible.
-  if (window.innerWidth <= 820) document.body.classList.remove('show-list');
+  if (window.innerWidth <= 820) {
+    document.body.classList.remove('show-list');
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.classList.toggle('active', tab.dataset.tab === 'map');
+    });
+    map.invalidateSize();
+  }
 
   map.flyTo([s.lat, s.lng], Math.max(map.getZoom(), 11), { duration: 0.6 });
   // Open popup once the (possibly clustered) marker is visible.
@@ -371,8 +446,10 @@ function detailRow(label, value, opts = {}) {
   }
   let html;
   if (opts.type === 'url') {
-    const url = firstUrl(value) || value;
-    html = `<a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(value)}</a>`;
+    const url = firstUrl(value);
+    html = url
+      ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(value)}</a>`
+      : escapeHtml(value);
   } else if (opts.type === 'email') {
     const em = firstEmail(value);
     html = em ? `<a href="mailto:${escapeHtml(em)}">${escapeHtml(value)}</a>` : escapeHtml(value);
@@ -441,15 +518,36 @@ function closeDetail() {
 function populateFilters() {
   const districts = [...new Set(STARTUPS.map((s) => s.district))].sort();
   const sectors = [...new Set(STARTUPS.map((s) => s.sector).filter(Boolean))].sort();
-  for (const d of districts) {
+
+  // Rebuild the filter selects (keep the leading "All …" option).
+  fillSelect(el.district, districts);
+  fillSelect(el.sector, sectors);
+
+  // Fill the add-form datalists (district_coords gives the canonical district list).
+  const districtList = $('district-options');
+  const sectorList = $('sector-options');
+  if (districtList) fillDatalist(districtList, [...new Set([...Object.keys(COORDS), ...districts])].sort());
+  if (sectorList) fillDatalist(sectorList, sectors);
+}
+
+function fillSelect(select, values) {
+  const current = select.value;
+  // Drop everything after the first ("All …") option, then repopulate.
+  while (select.options.length > 1) select.remove(1);
+  for (const v of values) {
     const o = document.createElement('option');
-    o.value = d; o.textContent = d;
-    el.district.appendChild(o);
+    o.value = v; o.textContent = v;
+    select.appendChild(o);
   }
-  for (const s of sectors) {
+  if (values.includes(current)) select.value = current;
+}
+
+function fillDatalist(list, values) {
+  list.innerHTML = '';
+  for (const v of values) {
     const o = document.createElement('option');
-    o.value = s; o.textContent = s;
-    el.sector.appendChild(o);
+    o.value = v;
+    list.appendChild(o);
   }
 }
 
@@ -492,6 +590,216 @@ function wireEvents() {
 }
 
 // ============================================================
+// Add-startup: modal, verify, submit, toast
+// ============================================================
+
+const FORM_FIELDS = [
+  'name', 'dipp', 'district', 'city', 'sector', 'industry', 'description',
+  'website', 'email', 'phone', 'founders', 'linkedin', 'careers', 'sources',
+];
+
+let verifiedClean = false; // becomes true after a passing verify; gates Add
+
+function formEl(name) { return $('f-' + name); }
+
+function collectForm() {
+  const data = {};
+  for (const f of FORM_FIELDS) {
+    const node = formEl(f);
+    data[f] = node ? node.value.trim() : '';
+  }
+  return data;
+}
+
+function clearFieldErrors() {
+  document.querySelectorAll('.field-err').forEach((n) => { n.textContent = ''; });
+  document.querySelectorAll('.field.invalid').forEach((n) => n.classList.remove('invalid'));
+}
+
+function showFieldErrors(errors) {
+  clearFieldErrors();
+  for (const [field, msg] of Object.entries(errors || {})) {
+    const errNode = document.querySelector(`.field-err[data-for="${field}"]`);
+    if (errNode) {
+      errNode.textContent = msg;
+      const wrap = errNode.closest('.field');
+      if (wrap) wrap.classList.add('invalid');
+    }
+  }
+}
+
+function setVerified(clean) {
+  verifiedClean = clean;
+  $('submit-btn').disabled = !clean;
+  const hint = $('form-hint');
+  if (hint) hint.textContent = clean ? 'Verified — no duplicates. You can add it.' : 'Verify first to enable Add.';
+}
+
+function invalidateVerification() {
+  if (verifiedClean) setVerified(false);
+}
+
+function openAddModal() {
+  $('modal-backdrop').hidden = false;
+  $('add-modal').hidden = false;
+  setVerified(false);
+  const first = formEl('name');
+  if (first) first.focus();
+}
+
+function closeAddModal() {
+  $('add-modal').hidden = true;
+  $('modal-backdrop').hidden = true;
+}
+
+function resetAddForm() {
+  $('add-form').reset();
+  clearFieldErrors();
+  const vr = $('verify-result');
+  vr.hidden = true;
+  vr.innerHTML = '';
+  setVerified(false);
+}
+
+function renderVerifyResult(payload) {
+  const vr = $('verify-result');
+  vr.hidden = false;
+
+  if (payload.errors && Object.keys(payload.errors).length) {
+    showFieldErrors(payload.errors);
+    vr.className = 'verify-result bad';
+    vr.textContent = 'Please fix the highlighted fields.';
+    setVerified(false);
+    return;
+  }
+  clearFieldErrors();
+
+  if (payload.duplicate) {
+    const reason = (m) => ({ name: 'same name', website: 'same website', dipp: 'same DPIIT number' }[m.on] || m.on);
+    const items = payload.matches.map((m) =>
+      `<li><strong>${escapeHtml(reason(m))}</strong> as <em>${escapeHtml(m.name || m.value)}</em> <span class="src">(${escapeHtml(m.source)})</span></li>`
+    ).join('');
+    vr.className = 'verify-result bad';
+    vr.innerHTML = `<div class="vr-title">Already in the directory</div><ul class="vr-list">${items}</ul>`;
+    setVerified(false);
+  } else {
+    vr.className = 'verify-result good';
+    vr.innerHTML = '<div class="vr-title">✓ No duplicates found — clear to add.</div>';
+    setVerified(true);
+  }
+}
+
+async function verifyStartup() {
+  const btn = $('verify-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/startups/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collectForm()),
+    });
+    const payload = await res.json();
+    renderVerifyResult(payload);
+  } catch (err) {
+    console.error('verify failed:', err);
+    const vr = $('verify-result');
+    vr.hidden = false;
+    vr.className = 'verify-result bad';
+    vr.textContent = API_AVAILABLE
+      ? 'Could not reach the verify service. Check the server and try again.'
+      : 'Verification needs the Node server (node server.js). It is not available in static mode.';
+    setVerified(false);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitStartup(ev) {
+  ev.preventDefault();
+  if (!verifiedClean) {
+    toast('Verify the record before adding.', 'bad');
+    return;
+  }
+  const btn = $('submit-btn');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/startups', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collectForm()),
+    });
+    const payload = await res.json();
+
+    if (res.status === 201 && payload.record) {
+      insertRecord(payload.record);
+      toast(`Added “${payload.record.name}” to the directory.`, 'good');
+      closeAddModal();
+      resetAddForm();
+    } else if (res.status === 409) {
+      renderVerifyResult({ duplicate: true, matches: payload.matches || [] });
+      toast('That startup is already listed.', 'bad');
+    } else if (res.status === 400) {
+      renderVerifyResult({ errors: payload.errors || {} });
+      toast('Some fields need fixing.', 'bad');
+    } else if (res.status === 403) {
+      toast('Adding is not permitted from this location (admin token required).', 'bad');
+    } else {
+      toast('Could not add the startup. Please try again.', 'bad');
+    }
+  } catch (err) {
+    console.error('add failed:', err);
+    toast(API_AVAILABLE ? 'Network error while adding.' : 'Adding needs the Node server (node server.js).', 'bad');
+  } finally {
+    btn.disabled = !verifiedClean;
+  }
+}
+
+// Insert a newly created record into the live map/list without a full reload.
+function insertRecord(record) {
+  const rec = userToRecord(record, STARTUPS.length);
+  assignCoords(rec);
+  STARTUPS.push(rec);
+
+  const counts = {};
+  for (const s of STARTUPS) counts[s.district] = (counts[s.district] || 0) + 1;
+  const marker = makeMarker(rec, counts[rec.district]);
+  if (clusterGroup) clusterGroup.addLayer(marker);
+
+  populateFilters();
+  render();
+}
+
+function toast(message, kind = 'info') {
+  const region = $('toast-region');
+  if (!region) return;
+  const node = document.createElement('div');
+  node.className = 'toast ' + kind;
+  node.textContent = message;
+  region.appendChild(node);
+  setTimeout(() => { node.classList.add('show'); }, 10);
+  setTimeout(() => {
+    node.classList.remove('show');
+    setTimeout(() => node.remove(), 300);
+  }, 4200);
+}
+
+function wireAddStartup() {
+  $('add-startup').addEventListener('click', openAddModal);
+  $('add-close').addEventListener('click', closeAddModal);
+  $('modal-backdrop').addEventListener('click', closeAddModal);
+  $('verify-btn').addEventListener('click', verifyStartup);
+  $('add-form').addEventListener('submit', submitStartup);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !$('add-modal').hidden) closeAddModal();
+  });
+  // Editing any field invalidates a prior verification.
+  for (const f of FORM_FIELDS) {
+    const node = formEl(f);
+    if (node) node.addEventListener('input', invalidateVerification);
+  }
+}
+
+// ============================================================
 // Boot
 // ============================================================
 
@@ -501,6 +809,7 @@ function wireEvents() {
     populateFilters();
     initMap();
     wireEvents();
+    wireAddStartup();
     render();
   } catch (err) {
     console.error('Failed to initialize MP Startup Map:', err);
