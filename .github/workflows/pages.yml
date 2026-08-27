@@ -23,13 +23,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Assemble the static site
-        run: |
-          mkdir -p site/data site/shared
-          cp index.html app.js style.css site/
-          cp shared/normalize.js site/shared/
-          cp data/tech_registry.json data/enriched.json data/district_coords.json site/data/
-          [ -f data/registry_meta.json ] && cp data/registry_meta.json site/data/ || true
+        run: node scripts/build-site.mjs
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

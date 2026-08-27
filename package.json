@@ -7,8 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test tests/normalize.test.js tests/server.test.js tests/app.test.js",
-    "check": "node --check server.js && node --check app.js && node --check shared/normalize.js && node --check scripts/fetch-startupindia.mjs && node scripts/check-frontend.mjs",
-    "data:refresh": "node scripts/fetch-startupindia.mjs --all"
+    "check": "node --check server.js && node --check app.js && node --check shared/normalize.js && node --check scripts/fetch-startupindia.mjs && node --check scripts/build-site.mjs && node scripts/check-frontend.mjs",
+    "data:refresh": "node scripts/fetch-startupindia.mjs --all",
+    "build:site": "node scripts/build-site.mjs"
   },
   "engines": {
     "node": ">=18"

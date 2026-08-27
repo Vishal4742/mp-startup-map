@@ -1,7 +1,8 @@
 # Only the static site is deployed (built into site/ by vercel.json buildCommand).
 server.js
 tests/
-scripts/
+scripts/*
+!scripts/build-site.mjs
 data/district_coords.py
 .github/
 CLAUDE.md
