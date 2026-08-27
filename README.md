@@ -161,6 +161,17 @@ email/phone, public founder names). Never enter private personal contact details
 Placeholder dossier values ("Not publicly listed (…)", "n/a", "Not applicable", "No active
 website found …") render muted as *not publicly listed*. Nothing is fabricated.
 
+## Sharing and deploying
+
+- **Links carry state.** Filters, sort and the open startup live in the URL hash
+  (`#district=Indore&sort=name&id=r12`), so any view can be copied from the address bar.
+- **CI** (`.github/workflows/ci.yml`) runs the backend tests, the frontend contract check and
+  the coordinate-generator diff on Node 18, 20, 22 and 24 for every push and pull request.
+- **GitHub Pages** (`.github/workflows/pages.yml`) publishes the static build — map, search,
+  filters and details, but no Add/Verify, so the Add button is hidden there. Enable it once
+  (Settings → Pages → Source: *GitHub Actions*; on a free plan the repository must be public),
+  then run the *Deploy to GitHub Pages* workflow from the Actions tab.
+
 ## Testing
 
 ```bash

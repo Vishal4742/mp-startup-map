@@ -533,6 +533,45 @@ function filtersActive(f) {
   return !!(f.q || f.district || f.sector || f.contactsOnly);
 }
 
+// ------------------------------------------------------------
+// Shareable URL state: filters, sort and the open startup live in the hash
+// (#q=…&district=…&sort=name&id=r12), written with replaceState so the
+// browser history is not spammed and links can be copied straight from the bar.
+// ------------------------------------------------------------
+function readUrlState() {
+  const p = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return {
+    q: p.get('q') || '',
+    district: p.get('district') || '',
+    sector: p.get('sector') || '',
+    contactsOnly: p.get('contacts') === '1',
+    sort: p.get('sort') || '',
+    id: p.get('id') || '',
+  };
+}
+
+function applyUrlState(state) {
+  el.search.value = state.q;
+  if ([...el.district.options].some((o) => o.value === state.district)) el.district.value = state.district;
+  if ([...el.sector.options].some((o) => o.value === state.sector)) el.sector.value = state.sector;
+  el.contacts.checked = state.contactsOnly;
+  if ([...el.sort.options].some((o) => o.value === state.sort)) el.sort.value = state.sort;
+}
+
+function writeUrlState() {
+  const f = currentFilter();
+  const p = new URLSearchParams();
+  if (f.q) p.set('q', el.search.value.trim());
+  if (f.district) p.set('district', f.district);
+  if (f.sector) p.set('sector', f.sector);
+  if (f.contactsOnly) p.set('contacts', '1');
+  if (el.sort.value !== 'district') p.set('sort', el.sort.value);
+  if (detailId) p.set('id', detailId);
+  const hash = p.toString();
+  const next = hash ? '#' + hash : window.location.pathname + window.location.search;
+  if (window.location.hash !== (hash ? '#' + hash : '')) history.replaceState(null, '', next);
+}
+
 function resetFilters() {
   el.search.value = '';
   el.district.value = '';
@@ -621,6 +660,7 @@ function render() {
   }
   el.list.appendChild(frag);
   el.empty.hidden = shown.length !== 0;
+  writeUrlState();
   el.listCount.textContent = shown.length === STARTUPS.length
     ? `${STARTUPS.length} startups`
     : `${shown.length} of ${STARTUPS.length} startups`;
@@ -755,6 +795,7 @@ function openDetail(id) {
   el.detail.hidden = false;
   el.detailBackdrop.hidden = false;
   el.detailClose.focus(); // dialog: move focus in, restore on close
+  writeUrlState();
 }
 
 function closeDetail() {
@@ -762,6 +803,7 @@ function closeDetail() {
   el.detail.hidden = true;
   el.detailBackdrop.hidden = true;
   detailId = null;
+  writeUrlState();
   if (detailReturnFocus && typeof detailReturnFocus.focus === 'function' && document.contains(detailReturnFocus)) {
     detailReturnFocus.focus();
   }
@@ -1203,7 +1245,16 @@ function wireAddStartup() {
     initMap();
     wireEvents();
     wireAddStartup();
+    const urlState = readUrlState();
+    applyUrlState(urlState);
     render();
+    // Deep link: #id=<record id> opens that startup and flies to its pin.
+    if (urlState.id && STARTUPS.some((s) => s.id === urlState.id)) {
+      flyTo(urlState.id);
+      openDetail(urlState.id);
+    }
+    // Static hosting (no Node server): adding is not possible, so do not offer it.
+    if (!API_AVAILABLE) $('add-startup').hidden = true;
   } catch (err) {
     console.error('Failed to initialize MP Startup Map:', err);
     showLoadError(err.userMessage || 'Serve this folder over HTTP (see README) and reload.');
