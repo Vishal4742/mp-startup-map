@@ -324,6 +324,8 @@ function createAppServer(options = {}) {
   // once. coords is served through the API so data/*.json stays locked down.
   const registry = readJsonSafe(path.join(dataDir, 'tech_registry.json'), []);
   const enriched = readJsonSafe(path.join(dataDir, 'enriched.json'), []);
+  // Provenance written by scripts/fetch-startupindia.mjs (source, fetchedAt, counts).
+  const meta = readJsonSafe(path.join(dataDir, 'registry_meta.json'), {});
   // coords must be a plain {district: [lat, lng]} object; anything else (null,
   // a string, an array) is treated as missing so validation fails closed.
   const rawCoords = readJsonSafe(path.join(dataDir, 'district_coords.json'), {});
@@ -406,7 +408,7 @@ function createAppServer(options = {}) {
         // file on every call, so an unbounded GET flood is a cheap DoS.
         if (rateLimited(remoteAddressOf(req))) return sendJson(res, 429, { error: 'rate_limited' });
         const user = await readUserRecords();
-        return sendJson(res, 200, { registry, enriched, user, coords });
+        return sendJson(res, 200, { registry, enriched, user, coords, meta });
       }
       if (req.method === 'POST') return handleCreate(req, res);
       return sendJson(res, 405, { error: 'method_not_allowed' });

@@ -14,6 +14,7 @@ const MP_ZOOM = 6;
 
 // App state
 let STARTUPS = [];          // merged, normalized records
+let META = {};              // registry provenance (source, fetchedAt) if available
 let COORDS = {};            // district -> [lat, lng]
 let DISTRICT_NAMES = [];    // coord keys, longest-first (for city scanning)
 const markerById = new Map();
@@ -281,6 +282,7 @@ async function loadData() {
     enriched = Array.isArray(api.enriched) ? api.enriched : [];
     user = Array.isArray(api.user) ? api.user : [];
     coords = api.coords && typeof api.coords === 'object' ? api.coords : {};
+    META = api.meta && typeof api.meta === 'object' ? api.meta : {};
     API_AVAILABLE = true;
     if (!Object.keys(coords).length) {
       console.warn('API returned no district centroids — pins will sit at the MP centre.');
@@ -300,6 +302,11 @@ async function loadData() {
       if (!Array.isArray(user)) user = [];
     } catch (_) {
       user = []; // no user file in pure-static mode
+    }
+    try {
+      META = await fetchJson('./data/registry_meta.json');
+    } catch (_) {
+      META = {}; // provenance is optional
     }
   }
 
@@ -446,6 +453,7 @@ function initMap() {
     maxZoom: 19,
     attribution: '&copy; OpenStreetMap contributors',
   }).addTo(map);
+  map.attributionControl.addAttribution(dataCredit());
 
   // District counts drive marker radius.
   const counts = {};
@@ -478,6 +486,17 @@ function initMap() {
     const more = node && node.querySelector('.popup-more');
     if (more) more.addEventListener('click', () => openDetail(more.getAttribute('data-id')));
   });
+}
+
+// "Data: Startup India (DPIIT), updated 26 Aug 2026" — from registry_meta.json,
+// written by the refresh script; a generic credit when no metadata is present.
+function dataCredit() {
+  const when = META.fetchedAt ? new Date(META.fetchedAt) : null;
+  const date = when && !Number.isNaN(when.getTime())
+    ? when.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
+  return 'Data: <a href="https://www.startupindia.gov.in/content/sih/en/search.html?roles=Startup&page=0" target="_blank" rel="noopener noreferrer">Startup India (DPIIT)</a>'
+    + (date ? ` · updated ${escapeHtml(date)}` : '');
 }
 
 // Count-based marker radius. Pins in a busier district read larger.

@@ -29,6 +29,7 @@ jobs:
           cp index.html app.js style.css site/
           cp shared/normalize.js site/shared/
           cp data/tech_registry.json data/enriched.json data/district_coords.json site/data/
+          [ -f data/registry_meta.json ] && cp data/registry_meta.json site/data/ || true
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

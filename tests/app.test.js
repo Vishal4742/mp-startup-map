@@ -104,17 +104,25 @@ test('hasContactChannel requires a linkable website, email or phone', () => {
 
 test('mergeData joins dossiers to registry rows and reads District as well as City', () => {
   const records = app.mergeData(registry, enriched, []);
-  assert.strictEqual(records.length, 720);
-  assert.strictEqual(records.filter((r) => r.id.startsWith('s')).length, 64, 'standalone dossiers');
-  const jambo = records.find((r) => /jambopay/i.test(r.name));
-  assert.strictEqual(jambo.district, 'Indore', 'dossier District fills a blank registry district');
-  const unknown = records.filter((r) => r.district === 'Unknown');
-  assert.strictEqual(unknown.length, 4);
+  // One record per registry row, plus one per dossier that matched nothing.
+  const standalone = records.filter((r) => r.id.startsWith('s')).length;
+  const matched = records.filter((r) => r.id.startsWith('r') && r.enriched).length;
+  assert.strictEqual(records.length, registry.length + standalone);
+  assert.strictEqual(standalone + matched, enriched.length, 'every dossier lands exactly once');
+  // Districts are always a coords key or the single 'Unknown' sentinel, and a
+  // blank registry district is filled from the dossier when one is attached.
   for (const r of records) assert.ok(r.district === 'Unknown' || coords[r.district], `${r.name}: ${r.district}`);
+  const blank = registry.filter((row) => !row[4]).length;
+  assert.ok(records.filter((r) => r.district === 'Unknown').length <= blank);
+  const jambo = records.find((r) => /jambopay/i.test(r.name));
+  if (jambo) {
+    assert.strictEqual(jambo.district, 'Indore', 'dossier District fills a blank registry district');
+    app.assignCoords(jambo);
+    assert.ok(Math.abs(jambo.lat - coords.Indore[0]) < 0.05 && Math.abs(jambo.lng - coords.Indore[1]) < 0.05);
+  }
   for (const r of records) assert.ok(typeof r.searchText === 'string' && r.searchText.includes(r.name.toLowerCase()));
-  assert.strictEqual(records.filter((r) => r.hasContacts).length, 77);
-  app.assignCoords(jambo);
-  assert.ok(Math.abs(jambo.lat - coords.Indore[0]) < 0.05 && Math.abs(jambo.lng - coords.Indore[1]) < 0.05);
+  // hasContacts is decided per dossier by the same rule, so the counts agree.
+  assert.strictEqual(records.filter((r) => r.hasContacts).length, enriched.filter((e) => app.hasContactChannel(e)).length);
 });
 
 test('userToRecord canonicalises the district and derives hasContacts from channels', () => {

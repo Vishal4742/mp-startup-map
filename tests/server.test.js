@@ -36,6 +36,10 @@ const {
 } = require('../server.js');
 
 const REPO_DATA = path.join(__dirname, '..', 'data');
+// The registry is refreshed from the Startup India portal, so its size is not a
+// constant — compare against the files, never a literal.
+const REGISTRY_COUNT = require(path.join(REPO_DATA, 'tech_registry.json')).length;
+const ENRICHED_COUNT = require(path.join(REPO_DATA, 'enriched.json')).length;
 
 // ---- temp data dir per test (removed when the suite finishes) -----------
 const tempDirs = [];
@@ -330,8 +334,8 @@ test('GET /api/startups combines registry, enriched and user records', async () 
   await withServer(baseOpts(dir), async ({ port }) => {
     const res = await request(port, 'GET', '/api/startups');
     assert.strictEqual(res.status, 200);
-    assert.strictEqual(res.json.registry.length, 656);
-    assert.strictEqual(res.json.enriched.length, 80);
+    assert.strictEqual(res.json.registry.length, REGISTRY_COUNT);
+    assert.strictEqual(res.json.enriched.length, ENRICHED_COUNT);
     assert.ok(Array.isArray(res.json.user));
     assert.strictEqual(res.json.user.length, 0);
   });
@@ -863,7 +867,7 @@ test('GET /api/startups is rate limited (429) past the limit and recovers after 
     await new Promise((r) => setTimeout(r, 220));
     const recovered = await request(port, 'GET', '/api/startups');
     assert.strictEqual(recovered.status, 200);
-    assert.strictEqual(recovered.json.registry.length, 656);
+    assert.strictEqual(recovered.json.registry.length, REGISTRY_COUNT);
   });
 });
 

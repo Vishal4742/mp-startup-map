@@ -1,0 +1,43 @@
+# Refreshes data/tech_registry.json from the Startup India portal every week
+# (and on demand), runs the test suite against the new data, and commits the
+# change. The push then deploys to Vercel through the Git integration.
+name: Refresh registry data
+
+on:
+  schedule:
+    - cron: '17 2 * * 1'   # Mondays 02:17 UTC
+  workflow_dispatch:
+    inputs:
+      all_industries:
+        description: 'Keep every industry (default: the tech industries already in the file)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch from Startup India
+        run: node scripts/fetch-startupindia.mjs ${{ inputs.all_industries && '--all' || '' }}
+      - name: Tests against the refreshed data
+        run: npm test && npm run check
+      - name: Commit and push if anything changed
+        run: |
+          if git diff --quiet -- data/; then echo "No data changes."; exit 0; fi
+          KEPT=$(node -e "console.log(require('./data/registry_meta.json').kept)")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/tech_registry.json data/registry_meta.json
+          git commit -m "data: refresh registry from Startup India ($KEPT startups)"
+          git push
