@@ -735,6 +735,10 @@ test('static serving is limited to public app assets', async () => {
     assert.strictEqual(appJs.status, 200);
     const cssRes = await request(port, 'GET', '/style.css');
     assert.strictEqual(cssRes.status, 200);
+    const shared = await request(port, 'GET', '/shared/normalize.js');
+    assert.strictEqual(shared.status, 200);
+    assert.ok(shared.headers['content-type'].startsWith('text/javascript'));
+    assert.ok(shared.raw.includes('MPNormalize'), 'shared module must attach window.MPNormalize for the browser');
   });
 });
 
@@ -748,6 +752,8 @@ test('server internals, tests, docs, config and data are not served (JSON 404)',
       '/data/tech_registry.json',
       '/data/enriched.json',
       '/data/district_coords.py',
+      '/shared/',
+      '/shared/normalize.js.map',
       '/README.md',
       '/CLAUDE.md',
       '/.gitignore',

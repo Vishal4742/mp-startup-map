@@ -19,7 +19,7 @@ A single-page interactive web app mapping Madhya Pradesh (India) tech startups o
 8. **Careers links open in new tab** (rel="noopener noreferrer").
 
 ## Tech constraints
-- Frontend: single `index.html` + `app.js` + `style.css`. No build step, no frameworks, vanilla JS. Leaflet via CDN (unpkg) — tiles and the Leaflet libraries need internet; data and API run locally.
+- Frontend: single `index.html` + `app.js` + `style.css` (+ `shared/normalize.js`, the normalisation rules shared with `server.js` — change them there, never in two places). No build step, no frameworks, vanilla JS. Leaflet via CDN (unpkg) — tiles and the Leaflet libraries need internet; data and API run locally.
 - Backend: `server.js` (Node 18+, zero deps) serves the app shell and `GET /api/startups` (registry + dossiers + user records + `coords`). It does NOT serve `data/*.json` statically. `app.js` loads the API first and falls back to `fetch('./data/...')` only when no API exists (plain `python -m http.server`) — keep both paths working. Tests: `npm test` (tests/server.test.js), `npm run check` (scripts/check-frontend.mjs). Include a README with the run commands.
 - Keep JSON loading resilient: if enriched.json fails, app still works with registry data.
 

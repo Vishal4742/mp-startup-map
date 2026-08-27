@@ -25,8 +25,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Assemble the static site
         run: |
-          mkdir -p site/data
+          mkdir -p site/data site/shared
           cp index.html app.js style.css site/
+          cp shared/normalize.js site/shared/
           cp data/tech_registry.json data/enriched.json data/district_coords.json site/data/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

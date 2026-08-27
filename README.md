@@ -175,9 +175,12 @@ website found …") render muted as *not publicly listed*. Nothing is fabricated
 ## Testing
 
 ```bash
-npm test          # node --test tests/server.test.js — backend suite (node:test, no deps)
+npm test          # tests/normalize.test.js + tests/server.test.js + tests/app.test.js (node:test, no deps)
 npm run check     # syntax check + scripts/check-frontend.mjs (IDs, endpoints, security attrs)
 ```
+
+`tests/app.test.js` loads `app.js` into a Node vm with a stub DOM and exercises its logic
+(name display, contact detection, the dossier merge, sorting) against the real data files.
 
 The tests copy the source JSON into a temp directory (removed afterwards), never touch real
 data, and ignore any `MP_ADMIN_TOKEN` / `MP_ALLOWED_HOSTS` in your shell.
@@ -186,3 +189,6 @@ data, and ignore any `MP_ADMIN_TOKEN` / `MP_ALLOWED_HOSTS` in your shell.
 
 Single `index.html` + `app.js` + `style.css` + `server.js`, vanilla JS, no build step and no
 runtime dependencies. Leaflet and Leaflet.markercluster load from the unpkg CDN.
+`shared/normalize.js` holds the name / DPIIT / district / URL normalisation rules once, for
+both the browser (`window.MPNormalize`) and the server (`require`), so the map and the
+duplicate check can never disagree.

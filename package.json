@@ -6,8 +6,8 @@
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test tests/server.test.js",
-    "check": "node --check server.js && node --check app.js && node scripts/check-frontend.mjs"
+    "test": "node --test tests/normalize.test.js tests/server.test.js tests/app.test.js",
+    "check": "node --check server.js && node --check app.js && node --check shared/normalize.js && node scripts/check-frontend.mjs"
   },
   "engines": {
     "node": ">=18"

@@ -24,90 +24,16 @@ const ROOT = __dirname;
 // Pure helpers (exported for testing)
 // ============================================================
 
-// Mirror of the frontend normName (app.js) — keep the two byte-for-byte in sync
-// so name matching is consistent both ways.
-function normalizeName(s) {
-  return String(s == null ? '' : s)
-    .toLowerCase()
-    .replace(/^\s*m\/s\.?\s*/, '') // "M/s …" trade prefix is noise, not a "/" alias
-    .split('(')[0].split('/')[0].split('→')[0]
-    .replace(/private limited|pvt\.? ?ltd\.?|llp|limited|technologies|technology/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-// Return the bare hostname (lowercase, no www.) for an http/https URL, else null.
-function normalizeHostname(url) {
-  const s = String(url == null ? '' : url).trim();
-  if (!s) return null;
-  let u;
-  try {
-    u = new URL(s);
-  } catch {
-    return null;
-  }
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-  return u.hostname.toLowerCase().replace(/^www\./, '') || null;
-}
-
-// URL tokenising — mirrored by firstUrl in app.js; keep the patterns in sync.
-//   URL_RE:         http(s) URLs, stopping at whitespace and common punctuation.
-//   EMAIL_TOKEN_RE: blanked out before the bare-domain scan so "hello@x.com"
-//                   never yields "x.com".
-//   BARE_DOMAIN_RE: scheme-less sites the way the dossiers write them
-//                   ("skylanedrone.com", "textify.ai"). Deliberately lowercase-only
-//                   with a short TLD so prose like "Pvt.Ltd" is not mistaken for one.
-const URL_RE = /https?:\/\/[^\s,()<>"']+/gi;
-const EMAIL_TOKEN_RE = /[^\s,;()<]+@[^\s,;()>]+/g;
-const BARE_DOMAIN_RE = /(^|[\s(])((?:[a-z0-9-]+\.)+[a-z]{2,6})(?=$|[\s,;:)/])/g;
-
-// Every URL (with a scheme) in a free-text field, in order. Scheme-less domains
-// are returned as https:// URLs. Enriched Website can hold several, e.g.
-// "https://a.com (parent: https://b.com)".
-function extractUrls(text) {
-  const str = String(text == null ? '' : text);
-  const out = str.match(URL_RE) || [];
-  const rest = str.replace(URL_RE, ' ').replace(EMAIL_TOKEN_RE, ' ');
-  let m;
-  BARE_DOMAIN_RE.lastIndex = 0;
-  while ((m = BARE_DOMAIN_RE.exec(rest)) !== null) out.push('https://' + m[2]);
-  return out;
-}
-
-function extractHostnames(text) {
-  const out = [];
-  for (const url of extractUrls(text)) {
-    const h = normalizeHostname(url);
-    if (h) out.push(h);
-  }
-  return out;
-}
-
-function normalizeDipp(s) {
-  return String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '');
-}
-
-function escapeRegExp(s) {
-  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// Does `text` contain `name` as a whole word? ("Pithampur, Dhar" yes; "Dharwad" no.)
-function containsWord(text, name) {
-  return new RegExp('(^|[^a-z0-9])' + escapeRegExp(name) + '([^a-z0-9]|$)').test(text);
-}
-
-// Map free text ("indore", "Pithampur, Dhar") onto one of the known district
-// names, or null. Exact match first, then the longest district name present as
-// a whole word — the same rule as districtFromText in app.js, so the client
-// and server pin a record to the same district.
-function canonicalDistrict(text, districts) {
-  const t = String(text == null ? '' : text).trim().toLowerCase();
-  if (!t || !Array.isArray(districts)) return null;
-  const byLength = [...districts].sort((a, b) => b.length - a.length);
-  for (const d of byLength) if (t === d.toLowerCase()) return d;
-  for (const d of byLength) if (containsWord(t, d.toLowerCase())) return d;
-  return null;
-}
+// Name / DIPP / URL / district normalisation is shared with the browser so the
+// duplicate check and the map agree — see shared/normalize.js.
+const {
+  normalizeName,
+  normalizeDipp,
+  normalizeHostname,
+  extractUrls,
+  extractHostnames,
+  canonicalDistrict,
+} = require('./shared/normalize.js');
 
 // Extract the bare hostname (lowercase, no port, no IPv6 brackets) from a
 // Host header value, or '' if it cannot be parsed.
@@ -348,10 +274,11 @@ function duplicateCheck(candidate, datasets) {
 const MAX_BODY = 64 * 1024; // 64 KiB
 const DEFAULT_ALLOWED_HOSTS = ['localhost', '127.0.0.1', '::1'];
 
-// Only these public app assets are ever served statically. The data source is
-// the API (/api/startups); everything else in the tree (server internals, tests,
-// docs, config, data/*.json) is never exposed. '/' maps to '/index.html'.
-const STATIC_ALLOW = new Set(['/index.html', '/app.js', '/style.css']);
+// Only these public app assets are ever served statically (the shared
+// normalisation module is part of the frontend). The data source is the API
+// (/api/startups); everything else in the tree (server internals, tests, docs,
+// config, data/*.json) is never exposed. '/' maps to '/index.html'.
+const STATIC_ALLOW = new Set(['/index.html', '/app.js', '/style.css', '/shared/normalize.js']);
 
 // Only the extensions STATIC_ALLOW can reach.
 const STATIC_TYPES = {

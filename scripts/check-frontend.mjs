@@ -62,12 +62,21 @@ check(/aria-live="(polite|assertive)"/.test(html), 'missing a live aria-live reg
 // aria-modal="true" on both overlays means Tab must be contained inside them.
 check(app.includes('function containTab'), 'app.js must contain Tab focus inside aria-modal dialogs (containTab)');
 check(
-  /\n\s+containTab\(el\.detail\)/.test(fnBody('wireEvents')) && /\n\s+containTab\(\$\('add-modal'\)\)/.test(fnBody('wireAddStartup')),
+  /\n\s+containTab\(el\.detail\)/.test(fnBody('wireEvents')) && /\n\s+containTab\(el\.addModal\)/.test(fnBody('wireAddStartup')),
   'containTab must be attached to both the detail drawer (wireEvents) and the add modal (wireAddStartup)'
 );
 
 // Labels must state public/official-contact policy.
 check(/public/i.test(html) && /not personal/i.test(html), 'form must state public/official (not personal) contact policy');
+
+// The shared normalisation module must load before app.js (app.js reads window.MPNormalize).
+{
+  const sharedAt = html.indexOf('<script src="./shared/normalize.js"></script>');
+  const appAt = html.indexOf('<script src="./app.js"></script>');
+  check(sharedAt !== -1, 'index.html must load ./shared/normalize.js');
+  check(appAt !== -1 && sharedAt < appAt, './shared/normalize.js must be loaded before ./app.js');
+  check(/window\.MPNormalize/.test(app), 'app.js must take its normalisation helpers from window.MPNormalize');
+}
 
 // Endpoints referenced by the frontend.
 for (const ep of ['/api/startups', '/api/startups/verify']) {

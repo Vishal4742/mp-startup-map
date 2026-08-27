@@ -40,6 +40,20 @@ const el = {
   statDistricts: $('stat-districts'),
   statSectors: $('stat-sectors'),
   statContacts: $('stat-contacts'),
+  districtOptions: $('district-options'),
+  sectorOptions: $('sector-options'),
+  // Add-startup dialog
+  addBtn: $('add-startup'),
+  addModal: $('add-modal'),
+  modalBackdrop: $('modal-backdrop'),
+  addClose: $('add-close'),
+  addForm: $('add-form'),
+  verifyBtn: $('verify-btn'),
+  submitBtn: $('submit-btn'),
+  verifyResult: $('verify-result'),
+  formHint: $('form-hint'),
+  adminToken: $('f-admin-token'),
+  toastRegion: $('toast-region'),
 };
 
 let map, clusterGroup;
@@ -49,22 +63,18 @@ const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').mat
 // Helpers
 // ============================================================
 
-// Mirror of normalizeName in server.js — keep the two byte-for-byte in sync so
-// the client and the duplicate check agree on what "the same name" is.
-function normName(s) {
-  return String(s == null ? '' : s)
-    .toLowerCase()
-    .replace(/^\s*m\/s\.?\s*/, '') // "M/s …" trade prefix is noise, not a "/" alias
-    .split('(')[0].split('/')[0].split('→')[0]
-    .replace(/private limited|pvt\.? ?ltd\.?|llp|limited|technologies|technology/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-// Mirror of normalizeDipp in server.js.
-function normDipp(s) {
-  return String(s == null ? '' : s).trim().toUpperCase().replace(/\s+/g, '');
-}
+// Normalisation rules shared with the server (shared/normalize.js, loaded by
+// index.html before this file) so the map and the duplicate check agree on
+// what "the same name / district / website" means.
+const {
+  normalizeName: normName,
+  normalizeDipp: normDipp,
+  extractUrls,
+  stripUrlTokens,
+  firstEmail,
+  firstPhone,
+  canonicalDistrict,
+} = window.MPNormalize;
 
 // Deterministic small hash -> jitter so co-located pins don't overlap.
 function hashJitter(seed) {
@@ -82,62 +92,33 @@ function hashJitter(seed) {
 // listed (…)", "n/a (company defunct)", "Not applicable", "No active website
 // found …"). Anything else is rendered as a real value.
 const MISSING_RE = /^(?:not (?:publicly |yet )?(?:listed|found|available|applicable|promoted|disclosed)|n\/a\b|na(?:$|\s*\()|none(?:$|\s*\()|no active|[—–-]$)/;
-const isMissing = (v) => {
+function isMissing(v) {
   if (!v) return true;
   const t = String(v).trim().toLowerCase();
   return t === '' || MISSING_RE.test(t);
-};
-
-// URL tokenising — mirrored by extractUrls in server.js; keep the patterns in sync.
-//   URL_RE:         http(s) URLs, stopping at whitespace and common punctuation.
-//   EMAIL_TOKEN_RE: blanked out before the bare-domain scan so "hello@x.com"
-//                   never yields "x.com".
-//   BARE_DOMAIN_RE: scheme-less sites the way the dossiers write them
-//                   ("skylanedrone.com", "textify.ai"). Deliberately lowercase-only
-//                   with a short TLD so prose like "Pvt.Ltd" is not mistaken for one.
-const URL_RE = /https?:\/\/[^\s,()<>"']+/i;
-const EMAIL_TOKEN_RE = /[^\s,;()<]+@[^\s,;()>]+/g;
-const BARE_DOMAIN_RE = /(^|[\s(])((?:[a-z0-9-]+\.)+[a-z]{2,6})(?=$|[\s,;:)/])/;
+}
 
 // First linkable website in a free-text field: an http(s) URL as written, else
 // a bare domain promoted to https://.
-const firstUrl = (s) => {
-  const str = String(s == null ? '' : s);
-  const m = str.match(URL_RE);
-  if (m) return m[0];
-  const bare = str.replace(EMAIL_TOKEN_RE, ' ').match(BARE_DOMAIN_RE);
-  return bare ? 'https://' + bare[2] : null;
-};
+function firstUrl(s) {
+  return extractUrls(s)[0] || null;
+}
+
 // A dossier may name a domain while saying it no longer works ("… domain is
 // DEAD (NXDOMAIN)", "twistmobile.in (site unreachable)"). Never link those. The
 // annotation is judged with the URL/domain token blanked out, so a site that
 // merely contains one of the words (dead-simple.io) still links.
 const DEAD_SITE_RE = /\b(?:dead|nxdomain|unreachable|defunct)\b/i;
-const websiteUrl = (v) => {
+function websiteUrl(v) {
   if (isMissing(v)) return null;
-  const str = String(v);
-  const url = firstUrl(str);
+  const url = firstUrl(v);
   if (!url) return null;
-  const rest = str
-    .replace(new RegExp(URL_RE.source, 'gi'), ' ')
-    .replace(EMAIL_TOKEN_RE, ' ')
-    .replace(new RegExp(BARE_DOMAIN_RE.source, 'g'), '$1 ');
-  return DEAD_SITE_RE.test(rest) ? null : url;
-};
-const firstEmail = (s) => {
-  const m = String(s == null ? '' : s).match(/[^\s,;()<]+@[^\s,;()>]+\.[a-z]{2,}/i);
-  return m ? m[0] : null;
-};
-// First phone number in a free-text field ("+91 99816 41111, +91 788 010 7001"
-// -> "+91 99816 41111"; "0731 6914364 (support)" -> "0731 6914364"). Parentheses
-// count only around a digit group — leading "(0731) …" / "(+91) …" or inline
-// "+1 (888) …" — so an annotation such as "(24x7 support line)" is never
-// swallowed into the number.
-const firstPhone = (s) => {
-  const m = String(s == null ? '' : s).match(/(?:\+?\d|\(\+?\d+\))(?:[\d\s\-]|\(\d+\)){4,}\d/);
-  return m ? m[0].trim() : null;
-};
-const telHref = (phone) => 'tel:' + String(phone).replace(/[^\d+]/g, '');
+  return DEAD_SITE_RE.test(stripUrlTokens(v)) ? null : url;
+}
+
+function telHref(phone) {
+  return 'tel:' + String(phone).replace(/[^\d+]/g, '');
+}
 
 // "Has contacts" means at least one public channel we can actually link to
 // (website, email or phone). The same rule applies to dossier rows and
@@ -195,22 +176,10 @@ function nameHtml(name, cls) {
   return escapeHtml(main) + (suffix ? ` <span class="${cls}">${escapeHtml(suffix)}</span>` : '');
 }
 
-const escapeRegExp = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-// Does `text` contain `name` as a whole word? ("Pithampur, Dhar" yes; "Dharwad" no.)
-function containsWord(text, name) {
-  return new RegExp('(^|[^a-z0-9])' + escapeRegExp(name) + '([^a-z0-9]|$)').test(text);
-}
-
-// Find the known district named in a free-text location. Exact match first,
-// then the longest district name present as a whole word — the same rule as
-// canonicalDistrict in server.js, so client and server pin to the same place.
+// Find the known district named in a free-text location ("Pithampur, Dhar",
+// "Indore/Bhopal") — the same rule the server applies when a record is added.
 function districtFromText(text) {
-  if (!text) return null;
-  const t = String(text).trim().toLowerCase();
-  for (const d of DISTRICT_NAMES) if (t === d.toLowerCase()) return d;
-  for (const d of DISTRICT_NAMES) if (containsWord(t, d.toLowerCase())) return d;
-  return null;
+  return canonicalDistrict(text, DISTRICT_NAMES);
 }
 
 // A dossier's own location text. Most rows use `City`; the registry_gems batch
@@ -383,7 +352,14 @@ function mergeData(registry, enriched, user) {
     records.push(userToRecord(u, userIdx++));
   }
 
+  for (const rec of records) indexRecord(rec);
   return records;
+}
+
+// What the search box matches against, built once per record.
+function indexRecord(rec) {
+  rec.searchText = [rec.name, rec.sector, rec.industry, rec.district].join(' ').toLowerCase();
+  return rec;
 }
 
 // Convert a persisted user record into the internal record + dossier shape.
@@ -476,9 +452,22 @@ function radiusForCount(count) {
   return 5 + Math.min(11, Math.log2((count || 1) + 1) * 2.2);
 }
 
+// Pin colours come from the CSS tokens, so the legend, the card edge and the
+// map can never drift apart. Read once, on first use.
+let THEME = null;
+function theme() {
+  if (!THEME) {
+    const css = getComputedStyle(document.documentElement);
+    const read = (name, fallback) => (css.getPropertyValue(name) || '').trim() || fallback;
+    THEME = { green: read('--green', '#4ade80'), accent: read('--accent', '#ff8f3f'), blue: read('--blue', '#60a5fa') };
+  }
+  return THEME;
+}
+
 function makeMarker(s, count) {
   const radius = radiusForCount(count);
-  const color = s.isUser ? '#60a5fa' : s.hasContacts ? '#4ade80' : '#ff8f3f';
+  const t = theme();
+  const color = s.isUser ? t.blue : s.hasContacts ? t.green : t.accent;
   const marker = L.circleMarker([s.lat, s.lng], {
     radius,
     color,
@@ -580,7 +569,9 @@ function resetFilters() {
   render();
 }
 
-const byName = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+function byName(a, b) {
+  return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+}
 function sortRecords(list, mode) {
   const sorted = [...list];
   if (mode === 'name') return sorted.sort(byName);
@@ -613,10 +604,7 @@ function matches(s, f) {
   if (f.district && s.district !== f.district) return false;
   if (f.sector && s.sector !== f.sector) return false;
   if (f.contactsOnly && !s.hasContacts) return false;
-  if (f.q) {
-    const hay = (s.name + ' ' + s.sector + ' ' + s.industry + ' ' + s.district).toLowerCase();
-    if (!hay.includes(f.q)) return false;
-  }
+  if (f.q && !s.searchText.includes(f.q)) return false;
   return true;
 }
 
@@ -824,10 +812,8 @@ function populateFilters() {
 
   // Fill the add-form datalists. The district suggestions are exactly the
   // canonical list the server accepts (never 'Unknown' or legacy free text).
-  const districtList = $('district-options');
-  const sectorList = $('sector-options');
-  if (districtList) fillDatalist(districtList, Object.keys(COORDS).sort());
-  if (sectorList) fillDatalist(sectorList, sectors);
+  if (el.districtOptions) fillDatalist(el.districtOptions, Object.keys(COORDS).sort());
+  if (el.sectorOptions) fillDatalist(el.sectorOptions, sectors);
 }
 
 function fillSelect(select, values) {
@@ -855,8 +841,13 @@ function fillDatalist(list, values) {
 // Events
 // ============================================================
 
+function debounce(fn, ms) {
+  let timer = null;
+  return () => { clearTimeout(timer); timer = setTimeout(fn, ms); };
+}
+
 function wireEvents() {
-  el.search.addEventListener('input', render);
+  el.search.addEventListener('input', debounce(render, 80));
   el.district.addEventListener('change', render);
   el.sector.addEventListener('change', render);
   el.contacts.addEventListener('change', render);
@@ -869,7 +860,7 @@ function wireEvents() {
     if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
-    if (!el.detail.hidden || !$('add-modal').hidden) return;
+    if (!el.detail.hidden || !el.addModal.hidden) return;
     e.preventDefault();
     el.search.focus();
     el.search.select();
@@ -890,7 +881,7 @@ function wireEvents() {
   // modal, z-index 1500, sits above the detail drawer, z-index 1300).
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    const modal = $('add-modal');
+    const modal = el.addModal;
     if (modal && !modal.hidden) closeAddModal();
     else closeDetail();
   });
@@ -926,7 +917,7 @@ const FOCUSABLE_SELECTOR =
 function containTab(container) {
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Tab' || container.hidden) return;
-    const modal = $('add-modal');
+    const modal = el.addModal;
     if (container !== modal && modal && !modal.hidden) return;
     const focusable = Array.from(container.querySelectorAll(FOCUSABLE_SELECTOR))
       .filter((n) => !n.hidden && n.offsetParent !== null);
@@ -966,8 +957,7 @@ function collectForm() {
 // Transient admin token: read straight off the field, sent only as a header on
 // POST /api/startups. It is never part of collectForm() / the persisted record.
 function adminTokenHeader() {
-  const node = $('f-admin-token');
-  const val = node && node.value ? node.value.trim() : '';
+  const val = el.adminToken && el.adminToken.value ? el.adminToken.value.trim() : '';
   return val ? { 'X-Admin-Token': val } : {};
 }
 
@@ -990,13 +980,12 @@ function showFieldErrors(errors) {
 
 function setVerified(clean) {
   verifiedClean = clean;
-  $('submit-btn').disabled = !clean;
-  const hint = $('form-hint');
-  if (hint) hint.textContent = clean ? 'Verified — no duplicates. You can add it.' : 'Verify first to enable Add.';
+  el.submitBtn.disabled = !clean;
+  if (el.formHint) el.formHint.textContent = clean ? 'Verified — no duplicates. You can add it.' : 'Verify first to enable Add.';
 }
 
 function hideVerifyResult() {
-  const vr = $('verify-result');
+  const vr = el.verifyResult;
   vr.hidden = true;
   vr.innerHTML = '';
   vr.className = 'verify-result';
@@ -1011,8 +1000,8 @@ function invalidateVerification() {
 }
 
 function openAddModal() {
-  $('modal-backdrop').hidden = false;
-  $('add-modal').hidden = false;
+  el.modalBackdrop.hidden = false;
+  el.addModal.hidden = false;
   setVerified(false);
   hideVerifyResult();
   const first = formEl('name');
@@ -1020,14 +1009,14 @@ function openAddModal() {
 }
 
 function closeAddModal() {
-  if ($('add-modal').hidden) return;
-  $('add-modal').hidden = true;
-  $('modal-backdrop').hidden = true;
-  $('add-startup').focus(); // dialog closed: return focus to its opener
+  if (el.addModal.hidden) return;
+  el.addModal.hidden = true;
+  el.modalBackdrop.hidden = true;
+  el.addBtn.focus(); // dialog closed: return focus to its opener
 }
 
 function resetAddForm() {
-  $('add-form').reset();
+  el.addForm.reset();
   clearFieldErrors();
   hideVerifyResult();
   setVerified(false);
@@ -1048,7 +1037,7 @@ function apiFailureMessage(status, payload, what) {
 }
 
 function showVerifyFailure(message) {
-  const vr = $('verify-result');
+  const vr = el.verifyResult;
   vr.hidden = false;
   vr.className = 'verify-result bad';
   vr.textContent = message;
@@ -1061,20 +1050,20 @@ function showVerifyFailure(message) {
 // that had focus disables itself during the request, which would otherwise drop
 // focus to <body>.
 function focusVerifyResult() {
-  const vr = $('verify-result');
-  if (!vr.hidden && !$('add-modal').hidden && typeof vr.focus === 'function') vr.focus();
+  const vr = el.verifyResult;
+  if (!vr.hidden && !el.addModal.hidden && typeof vr.focus === 'function') vr.focus();
 }
 
 // Keep keyboard focus inside the open add dialog after a request completes.
 function keepFocusInAddModal(fallback) {
-  const modal = $('add-modal');
+  const modal = el.addModal;
   if (modal.hidden || modal.contains(document.activeElement)) return;
   if (fallback && !fallback.disabled) fallback.focus();
-  else $('verify-btn').focus();
+  else el.verifyBtn.focus();
 }
 
 function renderVerifyResult(payload) {
-  const vr = $('verify-result');
+  const vr = el.verifyResult;
   vr.hidden = false;
 
   if (payload.errors && Object.keys(payload.errors).length) {
@@ -1108,7 +1097,7 @@ function renderVerifyResult(payload) {
 }
 
 async function verifyStartup() {
-  const btn = $('verify-btn');
+  const btn = el.verifyBtn;
   btn.disabled = true;
   try {
     const res = await fetch('/api/startups/verify', {
@@ -1141,7 +1130,7 @@ async function submitStartup(ev) {
     toast('Verify the record before adding.', 'bad');
     return;
   }
-  const btn = $('submit-btn');
+  const btn = el.submitBtn;
   btn.disabled = true;
   try {
     const res = await fetch('/api/startups', {
@@ -1176,7 +1165,7 @@ async function submitStartup(ev) {
 
 // Insert a newly created record into the live map/list without a full reload.
 function insertRecord(record) {
-  const rec = userToRecord(record, STARTUPS.length);
+  const rec = indexRecord(userToRecord(record, STARTUPS.length));
   assignCoords(rec);
   STARTUPS.push(rec);
 
@@ -1205,12 +1194,11 @@ function refreshDistrictRadii(district, counts) {
 }
 
 function toast(message, kind) {
-  const region = $('toast-region');
-  if (!region) return;
+  if (!el.toastRegion) return;
   const node = document.createElement('div');
   node.className = 'toast' + (kind ? ' ' + kind : ''); // kind: 'good' | 'bad'
   node.textContent = message;
-  region.appendChild(node);
+  el.toastRegion.appendChild(node);
   setTimeout(() => { node.classList.add('show'); }, 10);
   setTimeout(() => {
     node.classList.remove('show');
@@ -1219,12 +1207,12 @@ function toast(message, kind) {
 }
 
 function wireAddStartup() {
-  $('add-startup').addEventListener('click', openAddModal);
-  $('add-close').addEventListener('click', closeAddModal);
-  $('modal-backdrop').addEventListener('click', closeAddModal);
-  $('verify-btn').addEventListener('click', verifyStartup);
-  $('add-form').addEventListener('submit', submitStartup);
-  containTab($('add-modal'));
+  el.addBtn.addEventListener('click', openAddModal);
+  el.addClose.addEventListener('click', closeAddModal);
+  el.modalBackdrop.addEventListener('click', closeAddModal);
+  el.verifyBtn.addEventListener('click', verifyStartup);
+  el.addForm.addEventListener('submit', submitStartup);
+  containTab(el.addModal);
   // Escape is handled once, for both overlays, in wireEvents().
   // Editing any field invalidates a prior verification.
   for (const f of FORM_FIELDS) {
@@ -1254,7 +1242,7 @@ function wireAddStartup() {
       openDetail(urlState.id);
     }
     // Static hosting (no Node server): adding is not possible, so do not offer it.
-    if (!API_AVAILABLE) $('add-startup').hidden = true;
+    if (!API_AVAILABLE) el.addBtn.hidden = true;
   } catch (err) {
     console.error('Failed to initialize MP Startup Map:', err);
     showLoadError(err.userMessage || 'Serve this folder over HTTP (see README) and reload.');
