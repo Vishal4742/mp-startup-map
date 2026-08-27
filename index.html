@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0e1117" />
   <title>MP Startup Map — DPIIT-recognised startups in Madhya Pradesh</title>
 
   <!-- Leaflet -->
@@ -35,18 +36,25 @@
       <input type="search" id="search" class="search" placeholder="Search name, sector, industry, district…" autocomplete="off" aria-label="Search startups" aria-keyshortcuts="/" />
       <kbd class="search-kbd" aria-hidden="true">/</kbd>
     </div>
-    <select id="filter-district" class="select" aria-label="Filter by district"><option value="">All districts</option></select>
-    <select id="filter-industry" class="select" aria-label="Filter by industry"><option value="">All industries</option></select>
-    <select id="filter-sector" class="select" aria-label="Filter by sector"><option value="">All sectors</option></select>
-    <label class="toggle">
-      <input type="checkbox" id="filter-contacts" />
-      <span>Has contacts only</span>
-    </label>
-    <button id="reset" class="reset" type="button">Reset</button>
+    <!-- On phones the filters collapse behind this button; on desktop it is hidden
+         and the .filters block lays its children out inline (display: contents). -->
+    <button id="toggle-filters" class="toggle-filters" type="button" aria-expanded="false" aria-controls="filters">
+      Filters <span class="count" id="filters-count" hidden>0</span>
+    </button>
     <button id="toggle-list" class="toggle-list" type="button" aria-expanded="false" aria-controls="pane-list">
       List <span class="count" id="toggle-list-count">0</span>
     </button>
-    <button id="add-startup" class="add-btn" type="button">+ Add startup</button>
+    <div class="filters" id="filters">
+      <select id="filter-district" class="select" aria-label="Filter by district"><option value="">All districts</option></select>
+      <select id="filter-industry" class="select" aria-label="Filter by industry"><option value="">All industries</option></select>
+      <select id="filter-sector" class="select" aria-label="Filter by sector"><option value="">All sectors</option></select>
+      <label class="toggle">
+        <input type="checkbox" id="filter-contacts" />
+        <span>Has contacts only</span>
+      </label>
+      <button id="reset" class="reset" type="button">Reset</button>
+      <button id="add-startup" class="add-btn" type="button">+ Add startup</button>
+    </div>
   </div>
 
   <main class="split">

@@ -42,7 +42,7 @@ const fnBody = (name) => {
 
 // Required element IDs in index.html.
 const requiredIds = [
-  'map', 'search', 'filter-district', 'filter-industry', 'filter-sector', 'filter-contacts', 'toggle-list', 'pane-list',
+  'map', 'search', 'filter-district', 'filter-industry', 'filter-sector', 'filter-contacts', 'toggle-list', 'pane-list', 'toggle-filters', 'filters',
   'add-startup', 'add-modal', 'modal-backdrop', 'add-form', 'verify-btn',
   'submit-btn', 'verify-result', 'toast-region',
   'f-name', 'f-dipp', 'f-district', 'f-city', 'f-sector', 'f-industry', 'f-description',
@@ -61,6 +61,9 @@ check(code.includes('<h2 id="detail-title">'), 'app.js must render the detail he
 check(/aria-live="(polite|assertive)"/.test(html), 'missing a live aria-live region');
 check(/id="toggle-list"[^>]*aria-expanded=/.test(html) && /id="toggle-list"[^>]*aria-controls="pane-list"/.test(html), 'the List toggle must expose aria-expanded and aria-controls');
 check(/setAttribute\('aria-expanded'/.test(fnBody('setListOpen')), 'setListOpen must keep aria-expanded in sync');
+check(/id="toggle-filters"[^>]*aria-expanded=/.test(html) && /id="toggle-filters"[^>]*aria-controls="filters"/.test(html), 'the Filters toggle must expose aria-expanded and aria-controls');
+check(/setAttribute\('aria-expanded'/.test(fnBody('setFiltersOpen')), 'setFiltersOpen must keep aria-expanded in sync');
+check(/<meta name="viewport" content="[^"]*width=device-width[^"]*"/.test(html), 'index.html needs a device-width viewport');
 // aria-modal="true" on both overlays means Tab must be contained inside them.
 check(app.includes('function containTab'), 'app.js must contain Tab focus inside aria-modal dialogs (containTab)');
 check(

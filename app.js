@@ -34,6 +34,8 @@ const el = {
   listCount: $('list-count'),
   toggleList: $('toggle-list'),
   toggleListCount: $('toggle-list-count'),
+  toggleFilters: $('toggle-filters'),
+  filtersCount: $('filters-count'),
   sort: $('sort'),
   loading: $('loading'),
   detail: $('detail'),
@@ -85,6 +87,18 @@ function setListOpen(open, { remember = true } = {}) {
     try { localStorage.setItem(LIST_OPEN_KEY, open ? '1' : '0'); } catch (_) { /* storage may be blocked */ }
   }
   // The map's box changes size when the panel comes and goes.
+  if (map) requestAnimationFrame(() => map.invalidateSize());
+}
+
+// Phones: the filter controls collapse behind a Filters button (desktop shows
+// them inline and hides the button).
+function filtersOpen() {
+  return document.body.classList.contains('show-filters');
+}
+
+function setFiltersOpen(open) {
+  document.body.classList.toggle('show-filters', open);
+  el.toggleFilters.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (map) requestAnimationFrame(() => map.invalidateSize());
 }
 
@@ -733,6 +747,10 @@ function render() {
     ? `${STARTUPS.length} startups`
     : `${shown.length} of ${STARTUPS.length} startups`;
   el.toggleListCount.textContent = shown.length;
+  // Badge on the (mobile) Filters button: how many filters are narrowing the list.
+  const active = [f.district, f.industry, f.sector, f.contactsOnly].filter(Boolean).length;
+  el.filtersCount.textContent = active;
+  el.filtersCount.hidden = active === 0;
 
   // Marker visibility: rebuild cluster layer with the filtered subset.
   clusterGroup.clearLayers();
@@ -931,6 +949,7 @@ function wireEvents() {
     renderSoon();
   });
   el.toggleList.addEventListener('click', () => setListOpen(!listOpen()));
+  el.toggleFilters.addEventListener('click', () => setFiltersOpen(!filtersOpen()));
   el.district.addEventListener('change', render);
   el.industry.addEventListener('change', render);
   el.sector.addEventListener('change', render);
@@ -969,6 +988,7 @@ function wireEvents() {
     if (modal && !modal.hidden) closeAddModal();
     else if (!el.detail.hidden) closeDetail();
     else if (isMobile() && listOpen()) setListOpen(false); // overlay mode only
+    else if (filtersOpen()) setFiltersOpen(false);
   });
   containTab(el.detail);
 

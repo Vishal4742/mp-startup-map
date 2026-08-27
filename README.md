@@ -144,7 +144,10 @@ email/phone, public founder names). Never enter private personal contact details
   the duplicate check and shows the exact reasons — or the server's actual refusal (rate limit,
   host guard, …); **Add** stays disabled until verification passes with no duplicate. A successful add drops the record straight into
   the live map, list, and stats — no reload — and shows a toast.
-- **Mobile:** the list panel covers the map and closes when you pick a startup; the form collapses to a single column.
+- **Mobile:** the map takes most of the screen — the stats become one compact line, the filters
+  collapse behind a **Filters** button (search and **List** stay on top), inputs are 16 px (no
+  iOS zoom) with ≥40 px targets, the list panel covers the map and closes when you pick a startup,
+  and the add form and detail drawer go full-screen.
 
 ## Data model
 
