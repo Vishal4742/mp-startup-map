@@ -8,6 +8,8 @@
  *   node scripts/fetch-startupindia.mjs --state "Goa"   # another state
  *   node scripts/fetch-startupindia.mjs --max-pages 5   # quick sample
  *   node scripts/fetch-startupindia.mjs --out /tmp/x.json --meta /tmp/x.meta.json
+ *   node scripts/fetch-startupindia.mjs --raw-out data/registry_raw.json   # also keep the raw records
+ *   node scripts/fetch-startupindia.mjs --raw-in data/registry_raw.json    # re-map without the network
  *
  * Source: POST https://api.startupindia.gov.in/sih/api/noauth/search/profiles
  * (the request the portal's own search page sends; 9 results per page). State
@@ -42,6 +44,8 @@ const OUT = flag('--out', join(ROOT, 'data', 'tech_registry.json'));
 const META = flag('--meta', join(ROOT, 'data', 'registry_meta.json'));
 const MAX_PAGES = Number(flag('--max-pages', 0)) || Infinity;
 const ALL = has('--all');
+const RAW_OUT = flag('--raw-out', '');
+const RAW_IN = flag('--raw-in', '');
 
 // ---- helpers ----------------------------------------------------------
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -78,6 +82,14 @@ async function searchPage(id, page) {
 // ---- main -------------------------------------------------------------
 const coords = JSON.parse(await readFile(join(ROOT, 'data', 'district_coords.json'), 'utf8'));
 const districts = Object.keys(coords);
+// Towns that are not district names (Pithampur -> Dhar); see data/city_districts.json.
+const cityDistricts = JSON.parse(await readFile(join(ROOT, 'data', 'city_districts.json'), 'utf8'));
+const townIndex = new Map(Object.entries(cityDistricts).filter(([k]) => !k.startsWith('_')).map(([k, v]) => [k.toLowerCase(), v]));
+function districtOf(city) {
+  return canonicalDistrict(city, districts)
+    || townIndex.get(String(city || '').trim().toLowerCase())
+    || '';
+}
 
 // "Tech" = the industry taxonomy the curated registry already used. Pass --all
 // to keep every industry instead.
@@ -89,31 +101,47 @@ if (!ALL) {
   } catch { techIndustries = null; }
 }
 
-const state = await stateId(STATE);
-console.error(`${state.state} (${state.stateId}): ${state.totalCount} recognised startups on the portal`);
+// Raw records: either replayed from a snapshot (--raw-in) or fetched page by page.
+const keep = (r) => ({
+  id: r.id, name: r.name, dippNumber: r.dippNumber, dippRecognitionStatus: r.dippRecognitionStatus,
+  city: r.city, industries: r.industries || [], sectors: r.sectors || [], stages: r.stages || [],
+  registeredOn: r.registeredOn, publishedOn: r.publishedOn,
+});
+let state, raw = [];
+if (RAW_IN) {
+  const snap = JSON.parse(await readFile(RAW_IN, 'utf8'));
+  state = snap.state; raw = snap.records;
+  console.error(`${state.state}: replaying ${raw.length} raw records from ${RAW_IN}`);
+} else {
+  state = await stateId(STATE);
+  console.error(`${state.state} (${state.stateId}): ${state.totalCount} recognised startups on the portal`);
+  let page = 0, totalPages = 1;
+  while (page < totalPages && page < MAX_PAGES) {
+    const res = await searchPage(state.stateId, page);
+    totalPages = res.totalPages || 0;
+    for (const r of res.content || []) raw.push(keep(r));
+    page++;
+    if (page % 50 === 0) console.error(`  page ${page}/${totalPages} — ${raw.length} records`);
+    await sleep(PAGE_DELAY_MS);
+  }
+  if (RAW_OUT) await writeFile(RAW_OUT, JSON.stringify({ state, fetchedAt: new Date().toISOString(), records: raw }) + '\n');
+}
 
 const byDipp = new Map();
-let page = 0, totalPages = 1, seen = 0, dropped = { unrecognised: 0, noDipp: 0, filtered: 0 };
+let seen = 0, dropped = { unrecognised: 0, noDipp: 0, filtered: 0 };
 const unknownCities = new Map();
-while (page < totalPages && page < MAX_PAGES) {
-  const res = await searchPage(state.stateId, page);
-  totalPages = res.totalPages || 0;
-  for (const r of res.content || []) {
-    seen++;
-    if (r.dippRecognitionStatus && r.dippRecognitionStatus !== 'RECOGNISED') { dropped.unrecognised++; continue; }
-    const dipp = normalizeDipp(r.dippNumber);
-    if (!/^DIPP\d+$/.test(dipp)) { dropped.noDipp++; continue; }
-    const industry = (r.industries || [])[0] || '';
-    const sector = (r.sectors || [])[0] || '';
-    if (techIndustries && !techIndustries.has(industry)) { dropped.filtered++; continue; }
-    const city = String(r.city || '').trim();
-    const district = canonicalDistrict(city, districts) || '';
-    if (city && !district) unknownCities.set(city, (unknownCities.get(city) || 0) + 1);
-    if (!byDipp.has(dipp)) byDipp.set(dipp, [String(r.name || '').trim(), dipp, sector, industry, district]);
-  }
-  page++;
-  if (page % 50 === 0) console.error(`  page ${page}/${totalPages} — ${byDipp.size} kept`);
-  await sleep(PAGE_DELAY_MS);
+for (const r of raw) {
+  seen++;
+  if (r.dippRecognitionStatus && r.dippRecognitionStatus !== 'RECOGNISED') { dropped.unrecognised++; continue; }
+  const dipp = normalizeDipp(r.dippNumber);
+  if (!/^DIPP\d+$/.test(dipp)) { dropped.noDipp++; continue; }
+  const industry = (r.industries || [])[0] || '';
+  const sector = (r.sectors || [])[0] || '';
+  if (techIndustries && !techIndustries.has(industry)) { dropped.filtered++; continue; }
+  const city = String(r.city || '').trim();
+  const district = districtOf(city);
+  if (city && !district) unknownCities.set(city, (unknownCities.get(city) || 0) + 1);
+  if (!byDipp.has(dipp)) byDipp.set(dipp, [String(r.name || '').trim(), dipp, sector, industry, district]);
 }
 
 const rows = [...byDipp.values()].sort((a, b) => (a[4] || '~').localeCompare(b[4] || '~', 'en') || a[0].localeCompare(b[0], 'en', { sensitivity: 'base' }));

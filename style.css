@@ -87,7 +87,7 @@ body {
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
-.search-wrap { position: relative; flex: 1 1 260px; min-width: 180px; }
+.search-wrap { position: relative; flex: 1 1 220px; min-width: 160px; }
 .search {
   width: 100%;
   padding: 9px 38px 9px 12px;
@@ -110,7 +110,7 @@ body {
   padding: 9px 12px;
   background: var(--bg-3); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius);
-  outline: none; font-size: 13px; max-width: 200px;
+  outline: none; font-size: 13px; max-width: 170px;
 }
 .toggle {
   display: flex; align-items: center; gap: 7px;
@@ -345,10 +345,15 @@ body.show-list .pane-list { display: block; animation: slidein .2s var(--ease-ou
 }
 .chip.district { color: var(--accent-2); border-color: rgba(255,143,63,.35); }
 
+/* "Show more" row at the end of a long list. */
+.list-more { list-style: none; padding: 6px 4px 14px; text-align: center; }
+.list-more .btn-secondary { width: 100%; }
+
 .empty {
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 48px 20px; text-align: center; color: var(--text-dim); font-size: 13px;
 }
+.empty[hidden] { display: none; } /* the class sets display:flex; keep `hidden` authoritative */
 .empty strong { color: var(--text); font-size: 15px; }
 .empty .btn-secondary { margin-top: 10px; }
 

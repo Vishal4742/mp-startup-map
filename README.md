@@ -3,8 +3,8 @@
 [![CI](https://github.com/Vishal4742/mp-startup-map/actions/workflows/ci.yml/badge.svg)](https://github.com/Vishal4742/mp-startup-map/actions/workflows/ci.yml)
 **Live:** https://mp-startup-map.vercel.app (static build — map, search, filters, details; adding startups needs the local Node server)
 
-An interactive directory of Madhya Pradesh tech startups. It plots every DPIIT-recognised
-startup in the state on a Leaflet map (the registry is refreshed automatically from the Startup
+An interactive directory of Madhya Pradesh startups. It plots every DPIIT-recognised startup in
+the state (about 8,000) on a Leaflet map (the registry is refreshed automatically from the Startup
 India portal — see *Data pipeline*), adds contact dossiers for the notable ones, and
 lets you add new startups through a duplicate-checked submission form — all backed by a
 zero-dependency Node.js server.
@@ -127,14 +127,14 @@ email/phone, public founder names). Never enter private personal contact details
   community-added. Click a pin for a popup or "Full details →".
 - **List (toggled panel):** opened with the **List** button in the controls bar — a side panel on
   desktop, a full overlay on mobile (remembered between visits; typing a search opens it). It shows
-  every startup matching the filters, with a count and a sort (district,
+  every startup matching the filters — 200 at a time with a **Show more** button — with a count and a sort (district,
   name A–Z, contacts first). Registry names are shown title-cased with the legal suffix
   de-emphasised (the raw name is still what search matches); the card's left edge carries the
   same colour as its pin. Click to fly to the pin; double-click for the detail drawer. Cards are
   keyboard-selectable (`role="button"`, focusable): **Enter** opens the detail drawer, **Space**
   locates the pin on the map. The drawer has **Show on map** and, when known, **Website**.
 - **Search / filters / stats:** live search across name, sector, industry, district (press
-  **/** to jump to the search box); district and sector dropdowns; "has contacts only" toggle;
+  **/** to jump to the search box); district, industry and sector dropdowns; "has contacts only" toggle;
   live stats bar; Reset is enabled only while a filter is active, and the empty state offers
   **Clear filters**. A legend in the map corner explains the pin colours.
 - **Loading / errors:** card-shaped skeletons keep the layout stable while data loads; a
@@ -178,11 +178,15 @@ maps each city onto a district with the shared normaliser, de-duplicates by DIPP
 cities). Zero dependencies, ~4 requests/second with retries.
 
 ```bash
-npm run data:refresh                                  # Madhya Pradesh, tech industries
-node scripts/fetch-startupindia.mjs --all             # every industry
-node scripts/fetch-startupindia.mjs --state "Goa"     # another state
-node scripts/fetch-startupindia.mjs --max-pages 5     # quick sample
+npm run data:refresh                                        # Madhya Pradesh, every industry
+node scripts/fetch-startupindia.mjs --all --state "Goa"     # another state
+node scripts/fetch-startupindia.mjs --all --max-pages 5     # quick sample
+node scripts/fetch-startupindia.mjs --all --raw-out data/registry_raw.json   # keep the raw records too
+node scripts/fetch-startupindia.mjs --all --raw-in data/registry_raw.json    # re-map offline
 ```
+
+`data/city_districts.json` maps towns the portal lists as "city" (Pithampur, Mhow, Nagda…) onto
+their districts; add a line there when the refresh reports an unmapped city.
 
 `.github/workflows/refresh-data.yml` runs it every Monday (and on demand from the Actions tab),
 runs the tests against the new data and commits the change; the push deploys to Vercel through

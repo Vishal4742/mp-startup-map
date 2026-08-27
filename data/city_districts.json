@@ -1,0 +1,20 @@
+{
+  "_comment": "Towns the Startup India portal lists as 'city' that are not district names: town -> district (keys of district_coords.json). Used by scripts/fetch-startupindia.mjs after the whole-word district match fails.",
+  "Rau": "Indore",
+  "Mhow": "Indore",
+  "Mhowgaon": "Indore",
+  "Mhow Cantonment": "Indore",
+  "Pithampur": "Dhar",
+  "Manawar": "Dhar",
+  "Nagda": "Ujjain",
+  "Itarsi": "Hoshangabad",
+  "Pipariya": "Hoshangabad",
+  "Shujalpur": "Shajapur",
+  "Sanawad": "Khargone",
+  "Narsinghgarh": "Rajgarh",
+  "Sihora": "Jabalpur",
+  "Raghogarh-Vijaypur": "Guna",
+  "Raghogarh": "Guna",
+  "Sausar": "Chhindwara",
+  "Sironj": "Vidisha"
+}

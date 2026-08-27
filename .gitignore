@@ -1,6 +1,8 @@
 # Runtime-generated, user-submitted records (not source data)
 data/user_startups.json
 data/.user_startups.*.tmp
+# Optional raw snapshot from the Startup India pull (large; regenerate with --raw-out)
+data/registry_raw.json
 
 # Dependencies / tooling
 node_modules/

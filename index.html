@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MP Startup Map — Madhya Pradesh Tech Startups</title>
+  <title>MP Startup Map — DPIIT-recognised startups in Madhya Pradesh</title>
 
   <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -20,7 +20,7 @@
     <div class="brand">
       <span class="logo-dot"></span>
       <h1>MP Startup Map</h1>
-      <span class="subtitle">Madhya Pradesh tech startups</span>
+      <span class="subtitle">Every DPIIT-recognised startup in Madhya Pradesh</span>
     </div>
     <div class="stats" id="stats" role="status" aria-live="polite">
       <div class="stat"><span class="stat-num" id="stat-total">0</span><span class="stat-label">shown</span></div>
@@ -36,6 +36,7 @@
       <kbd class="search-kbd" aria-hidden="true">/</kbd>
     </div>
     <select id="filter-district" class="select" aria-label="Filter by district"><option value="">All districts</option></select>
+    <select id="filter-industry" class="select" aria-label="Filter by industry"><option value="">All industries</option></select>
     <select id="filter-sector" class="select" aria-label="Filter by sector"><option value="">All sectors</option></select>
     <label class="toggle">
       <input type="checkbox" id="filter-contacts" />

@@ -24,6 +24,7 @@ const $ = (id) => document.getElementById(id);
 const el = {
   search: $('search'),
   district: $('filter-district'),
+  industry: $('filter-industry'),
   sector: $('filter-sector'),
   contacts: $('filter-contacts'),
   reset: $('reset'),
@@ -565,13 +566,14 @@ function currentFilter() {
   return {
     q: el.search.value.trim().toLowerCase(),
     district: el.district.value,
+    industry: el.industry.value,
     sector: el.sector.value,
     contactsOnly: el.contacts.checked,
   };
 }
 
 function filtersActive(f) {
-  return !!(f.q || f.district || f.sector || f.contactsOnly);
+  return !!(f.q || f.district || f.industry || f.sector || f.contactsOnly);
 }
 
 // ------------------------------------------------------------
@@ -584,6 +586,7 @@ function readUrlState() {
   return {
     q: p.get('q') || '',
     district: p.get('district') || '',
+    industry: p.get('industry') || '',
     sector: p.get('sector') || '',
     contactsOnly: p.get('contacts') === '1',
     sort: p.get('sort') || '',
@@ -594,6 +597,7 @@ function readUrlState() {
 function applyUrlState(state) {
   el.search.value = state.q;
   if ([...el.district.options].some((o) => o.value === state.district)) el.district.value = state.district;
+  if ([...el.industry.options].some((o) => o.value === state.industry)) el.industry.value = state.industry;
   if ([...el.sector.options].some((o) => o.value === state.sector)) el.sector.value = state.sector;
   el.contacts.checked = state.contactsOnly;
   if ([...el.sort.options].some((o) => o.value === state.sort)) el.sort.value = state.sort;
@@ -604,6 +608,7 @@ function writeUrlState() {
   const p = new URLSearchParams();
   if (f.q) p.set('q', el.search.value.trim());
   if (f.district) p.set('district', f.district);
+  if (f.industry) p.set('industry', f.industry);
   if (f.sector) p.set('sector', f.sector);
   if (f.contactsOnly) p.set('contacts', '1');
   if (el.sort.value !== 'district') p.set('sort', el.sort.value);
@@ -616,13 +621,17 @@ function writeUrlState() {
 function resetFilters() {
   el.search.value = '';
   el.district.value = '';
+  el.industry.value = '';
   el.sector.value = '';
   el.contacts.checked = false;
   render();
 }
 
+// Intl.Collator is far cheaper than String#localeCompare with options, which
+// matters when thousands of rows are re-sorted on every filter change.
+const NAME_COLLATOR = new Intl.Collator('en', { sensitivity: 'base' });
 function byName(a, b) {
-  return a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+  return NAME_COLLATOR.compare(a.name, b.name);
 }
 function sortRecords(list, mode) {
   const sorted = [...list];
@@ -632,7 +641,7 @@ function sortRecords(list, mode) {
   }
   // 'district': grouped by district, A–Z inside each group ('Unknown' sorts last).
   const unknown = (s) => (s.district === 'Unknown' ? 1 : 0);
-  return sorted.sort((a, b) => (unknown(a) - unknown(b)) || a.district.localeCompare(b.district, 'en') || byName(a, b));
+  return sorted.sort((a, b) => (unknown(a) - unknown(b)) || NAME_COLLATOR.compare(a.district, b.district) || byName(a, b));
 }
 
 // Card-shaped placeholders so the layout is stable while the data loads.
@@ -654,21 +663,32 @@ function showLoadError(message) {
 
 function matches(s, f) {
   if (f.district && s.district !== f.district) return false;
+  if (f.industry && s.industry !== f.industry) return false;
   if (f.sector && s.sector !== f.sector) return false;
   if (f.contactsOnly && !s.hasContacts) return false;
   if (f.q && !s.searchText.includes(f.q)) return false;
   return true;
 }
 
+// The list is rendered in pages: thousands of cards at once would make every
+// keystroke sluggish, and nobody scrolls past a few hundred anyway.
+const LIST_PAGE = 200;
+let listLimit = LIST_PAGE;
+let lastListKey = '';
+
 function render() {
   const f = currentFilter();
   const shown = sortRecords(STARTUPS.filter((s) => matches(s, f)), el.sort.value);
   el.reset.disabled = !filtersActive(f);
 
+  // A new filter/sort starts the list from the top again.
+  const listKey = JSON.stringify([f, el.sort.value]);
+  if (listKey !== lastListKey) { listLimit = LIST_PAGE; lastListKey = listKey; }
+
   // List
   el.list.innerHTML = '';
   const frag = document.createDocumentFragment();
-  for (const s of shown) {
+  for (const s of shown.slice(0, listLimit)) {
     const li = document.createElement('li');
     li.className = 'card ' + statusClass(s);
     li.dataset.id = s.id;
@@ -697,6 +717,14 @@ function render() {
       }
     });
     frag.appendChild(li);
+  }
+  if (shown.length > listLimit) {
+    const more = document.createElement('li');
+    more.className = 'list-more';
+    const remaining = shown.length - listLimit;
+    more.innerHTML = `<button type="button" class="btn-secondary" id="list-more">Show ${Math.min(LIST_PAGE, remaining)} more (${remaining} remaining)</button>`;
+    more.querySelector('button').addEventListener('click', () => { listLimit += LIST_PAGE; render(); });
+    frag.appendChild(more);
   }
   el.list.appendChild(frag);
   el.empty.hidden = shown.length !== 0;
@@ -851,10 +879,12 @@ function closeDetail() {
 
 function populateFilters() {
   const districts = [...new Set(STARTUPS.map((s) => s.district))].sort();
+  const industries = [...new Set(STARTUPS.map((s) => s.industry).filter(Boolean))].sort();
   const sectors = [...new Set(STARTUPS.map((s) => s.sector).filter(Boolean))].sort();
 
   // Rebuild the filter selects (keep the leading "All …" option).
   fillSelect(el.district, districts);
+  fillSelect(el.industry, industries);
   fillSelect(el.sector, sectors);
 
   // Fill the add-form datalists. The district suggestions are exactly the
@@ -902,6 +932,7 @@ function wireEvents() {
   });
   el.toggleList.addEventListener('click', () => setListOpen(!listOpen()));
   el.district.addEventListener('change', render);
+  el.industry.addEventListener('change', render);
   el.sector.addEventListener('change', render);
   el.contacts.addEventListener('change', render);
   el.sort.addEventListener('change', render);

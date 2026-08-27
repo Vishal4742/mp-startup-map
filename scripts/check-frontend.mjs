@@ -42,7 +42,7 @@ const fnBody = (name) => {
 
 // Required element IDs in index.html.
 const requiredIds = [
-  'map', 'search', 'filter-district', 'filter-sector', 'filter-contacts', 'toggle-list', 'pane-list',
+  'map', 'search', 'filter-district', 'filter-industry', 'filter-sector', 'filter-contacts', 'toggle-list', 'pane-list',
   'add-startup', 'add-modal', 'modal-backdrop', 'add-form', 'verify-btn',
   'submit-btn', 'verify-result', 'toast-region',
   'f-name', 'f-dipp', 'f-district', 'f-city', 'f-sector', 'f-industry', 'f-description',
