@@ -25,3 +25,4 @@ Thumbs.db
 
 # Vercel / Pages static build output
 site/
+.vercel
