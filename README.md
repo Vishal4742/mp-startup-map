@@ -1,5 +1,8 @@
 # MP Startup Map
 
+[![CI](https://github.com/Vishal4742/mp-startup-map/actions/workflows/ci.yml/badge.svg)](https://github.com/Vishal4742/mp-startup-map/actions/workflows/ci.yml)
+**Live:** https://mp-startup-map.vercel.app (static build — map, search, filters, details; adding startups needs the local Node server)
+
 An interactive, locally-hosted directory of Madhya Pradesh tech startups. It plots 656
 DPIIT-registered startups on a Leaflet map, adds contact dossiers for the notable ones, and
 lets you add new startups through a duplicate-checked submission form — all backed by a
@@ -167,6 +170,9 @@ website found …") render muted as *not publicly listed*. Nothing is fabricated
   (`#district=Indore&sort=name&id=r12`), so any view can be copied from the address bar.
 - **CI** (`.github/workflows/ci.yml`) runs the backend tests, the frontend contract check and
   the coordinate-generator diff on Node 18, 20, 22 and 24 for every push and pull request.
+- **Vercel** hosts the static build at https://mp-startup-map.vercel.app; the project is linked to
+  this GitHub repository, so every push to `main` deploys to production and every pull request gets
+  a preview URL (`vercel.json` holds the build step and security headers).
 - **GitHub Pages** (`.github/workflows/pages.yml`) publishes the static build — map, search,
   filters and details, but no Add/Verify, so the Add button is hidden there. Enable it once
   (Settings → Pages → Source: *GitHub Actions*; on a free plan the repository must be public),
