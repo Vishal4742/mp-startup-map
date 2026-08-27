@@ -120,11 +120,13 @@ email/phone, public founder names). Never enter private personal contact details
 
 ## What's on screen
 
-- **Map (left):** OpenStreetMap tiles centered on MP; one clustered pin per startup — the 656
+- **Map (home screen, full width):** OpenStreetMap tiles centered on MP; one clustered pin per startup — the 656
   registry rows plus the dossier-only companies (about 720 in total). Green = has public
   contact details (a linkable website, email or phone), orange = none listed yet, blue =
   community-added. Click a pin for a popup or "Full details →".
-- **List (right):** every startup matching the filters, with a count and a sort (district,
+- **List (toggled panel):** opened with the **List** button in the controls bar — a side panel on
+  desktop, a full overlay on mobile (remembered between visits; typing a search opens it). It shows
+  every startup matching the filters, with a count and a sort (district,
   name A–Z, contacts first). Registry names are shown title-cased with the legal suffix
   de-emphasised (the raw name is still what search matches); the card's left edge carries the
   same colour as its pin. Click to fly to the pin; double-click for the detail drawer. Cards are
@@ -141,7 +143,7 @@ email/phone, public founder names). Never enter private personal contact details
   the duplicate check and shows the exact reasons — or the server's actual refusal (rate limit,
   host guard, …); **Add** stays disabled until verification passes with no duplicate. A successful add drops the record straight into
   the live map, list, and stats — no reload — and shows a toast.
-- **Mobile:** the split view becomes Map / List tabs; the form collapses to a single column.
+- **Mobile:** the list panel covers the map and closes when you pick a startup; the form collapses to a single column.
 
 ## Data model
 

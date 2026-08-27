@@ -30,6 +30,8 @@ const el = {
   empty: $('empty'),
   emptyReset: $('empty-reset'),
   listCount: $('list-count'),
+  toggleList: $('toggle-list'),
+  toggleListCount: $('toggle-list-count'),
   sort: $('sort'),
   loading: $('loading'),
   detail: $('detail'),
@@ -58,6 +60,37 @@ const el = {
 
 let map, clusterGroup;
 const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const MOBILE_MAX_WIDTH = 820; // must match the style.css media query
+
+function isMobile() {
+  return window.innerWidth <= MOBILE_MAX_WIDTH;
+}
+
+// ------------------------------------------------------------
+// List panel: the map is the home screen; the list opens on demand (side
+// panel on desktop, full overlay on mobile) and the choice is remembered.
+// ------------------------------------------------------------
+const LIST_OPEN_KEY = 'mp-startup-map.listOpen';
+
+function listOpen() {
+  return document.body.classList.contains('show-list');
+}
+
+function setListOpen(open, { remember = true } = {}) {
+  document.body.classList.toggle('show-list', open);
+  el.toggleList.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (remember) {
+    try { localStorage.setItem(LIST_OPEN_KEY, open ? '1' : '0'); } catch (_) { /* storage may be blocked */ }
+  }
+  // The map's box changes size when the panel comes and goes.
+  if (map) requestAnimationFrame(() => map.invalidateSize());
+}
+
+function restoreListOpen() {
+  let saved = null;
+  try { saved = localStorage.getItem(LIST_OPEN_KEY); } catch (_) { /* ignore */ }
+  setListOpen(saved === '1', { remember: false });
+}
 
 // ============================================================
 // Helpers
@@ -652,6 +685,7 @@ function render() {
   el.listCount.textContent = shown.length === STARTUPS.length
     ? `${STARTUPS.length} startups`
     : `${shown.length} of ${STARTUPS.length} startups`;
+  el.toggleListCount.textContent = shown.length;
 
   // Marker visibility: rebuild cluster layer with the filtered subset.
   clusterGroup.clearLayers();
@@ -688,14 +722,8 @@ function flyTo(id) {
   if (!s || !marker) return;
   setActive(id, false);
 
-  // On mobile, jump to the map tab so the fly-to is visible.
-  if (window.innerWidth <= 820) {
-    document.body.classList.remove('show-list');
-    document.querySelectorAll('.tab').forEach((tab) => {
-      tab.classList.toggle('active', tab.dataset.tab === 'map');
-    });
-    map.invalidateSize();
-  }
+  // On mobile the list covers the map: close it so the fly-to is visible.
+  if (isMobile() && listOpen()) setListOpen(false, { remember: false });
 
   map.flyTo([s.lat, s.lng], Math.max(map.getZoom(), 11), { duration: 0.6, animate: !REDUCED_MOTION });
   // Open popup once the (possibly clustered) marker is visible.
@@ -847,7 +875,13 @@ function debounce(fn, ms) {
 }
 
 function wireEvents() {
-  el.search.addEventListener('input', debounce(render, 80));
+  const renderSoon = debounce(render, 80);
+  el.search.addEventListener('input', () => {
+    // Typing a query means looking for names: make sure the results are visible.
+    if (el.search.value.trim() && !listOpen()) setListOpen(true);
+    renderSoon();
+  });
+  el.toggleList.addEventListener('click', () => setListOpen(!listOpen()));
   el.district.addEventListener('change', render);
   el.sector.addEventListener('change', render);
   el.contacts.addEventListener('change', render);
@@ -883,7 +917,8 @@ function wireEvents() {
     if (e.key !== 'Escape') return;
     const modal = el.addModal;
     if (modal && !modal.hidden) closeAddModal();
-    else closeDetail();
+    else if (!el.detail.hidden) closeDetail();
+    else if (isMobile() && listOpen()) setListOpen(false); // overlay mode only
   });
   containTab(el.detail);
 
@@ -894,15 +929,6 @@ function wireEvents() {
     if (card) openDetail(card.dataset.id);
   });
 
-  // Mobile tabs
-  document.querySelectorAll('.tab').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
-      tab.classList.add('active');
-      document.body.classList.toggle('show-list', tab.dataset.tab === 'list');
-      if (tab.dataset.tab === 'map') setTimeout(() => map.invalidateSize(), 50);
-    });
-  });
 }
 
 // aria-modal="true" promises that Tab never leaves the dialog; keep that
@@ -1233,8 +1259,10 @@ function wireAddStartup() {
     initMap();
     wireEvents();
     wireAddStartup();
+    restoreListOpen();
     const urlState = readUrlState();
     applyUrlState(urlState);
+    if (urlState.q) setListOpen(true, { remember: false }); // a shared search link shows its results
     render();
     // Deep link: #id=<record id> opens that startup and flies to its pin.
     if (urlState.id && STARTUPS.some((s) => s.id === urlState.id)) {

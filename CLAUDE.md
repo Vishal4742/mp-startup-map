@@ -12,10 +12,10 @@ A single-page interactive web app mapping Madhya Pradesh (India) tech startups o
 1. **Leaflet map** (OpenStreetMap tiles) centered on MP (23.5, 78.5, zoom 6). Circle/pin markers sized by district startup count. Popups: name, sector, district, website link, email/phone if available.
 2. **Search box** — filters by name, sector, industry, district (case-insensitive, live).
 3. **Filters** — district dropdown, sector dropdown, "has contacts only" toggle.
-4. **Split view** — map left (~60%), list right; clicking a list item flies the map to its pin and opens the popup; clicking a pin highlights the list entry.
+4. **Full-screen map with a list panel** — the map fills the home screen; the list opens from a **List** toggle in the controls bar (side panel on desktop, full overlay on mobile); typing in search opens it. Clicking a list item flies the map to its pin and opens the popup; clicking a pin highlights the list entry.
 5. **Detail panel** — for enriched (80) companies show full dossier: description, founders, email, phone, LinkedIn, careers. For registry-only companies show registry fields + "contact details not yet researched".
 6. **Stats bar** — total shown, districts, sectors after filtering.
-7. **Dark, modern UI** — clean sans-serif, MP-themed accent color, responsive (mobile: tabs for map/list).
+7. **Dark, modern UI** — clean sans-serif, MP-themed accent color, responsive (mobile: the list panel overlays the map).
 8. **Careers links open in new tab** (rel="noopener noreferrer").
 
 ## Tech constraints

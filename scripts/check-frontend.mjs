@@ -42,7 +42,7 @@ const fnBody = (name) => {
 
 // Required element IDs in index.html.
 const requiredIds = [
-  'map', 'search', 'filter-district', 'filter-sector', 'filter-contacts',
+  'map', 'search', 'filter-district', 'filter-sector', 'filter-contacts', 'toggle-list', 'pane-list',
   'add-startup', 'add-modal', 'modal-backdrop', 'add-form', 'verify-btn',
   'submit-btn', 'verify-result', 'toast-region',
   'f-name', 'f-dipp', 'f-district', 'f-city', 'f-sector', 'f-industry', 'f-description',
@@ -59,6 +59,8 @@ check(/id="detail"[^>]*role="dialog"/.test(html), 'detail drawer missing role="d
 check(/id="detail"[^>]*aria-labelledby="detail-title"/.test(html), 'detail drawer must be labelled by its heading');
 check(code.includes('<h2 id="detail-title">'), 'app.js must render the detail heading with id="detail-title" (aria-labelledby target)');
 check(/aria-live="(polite|assertive)"/.test(html), 'missing a live aria-live region');
+check(/id="toggle-list"[^>]*aria-expanded=/.test(html) && /id="toggle-list"[^>]*aria-controls="pane-list"/.test(html), 'the List toggle must expose aria-expanded and aria-controls');
+check(/setAttribute\('aria-expanded'/.test(fnBody('setListOpen')), 'setListOpen must keep aria-expanded in sync');
 // aria-modal="true" on both overlays means Tab must be contained inside them.
 check(app.includes('function containTab'), 'app.js must contain Tab focus inside aria-modal dialogs (containTab)');
 check(

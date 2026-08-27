@@ -42,13 +42,10 @@
       <span>Has contacts only</span>
     </label>
     <button id="reset" class="reset" type="button">Reset</button>
+    <button id="toggle-list" class="toggle-list" type="button" aria-expanded="false" aria-controls="pane-list">
+      List <span class="count" id="toggle-list-count">0</span>
+    </button>
     <button id="add-startup" class="add-btn" type="button">+ Add startup</button>
-  </div>
-
-  <!-- Mobile tabs -->
-  <div class="tabs" id="tabs">
-    <button class="tab active" data-tab="map" type="button">Map</button>
-    <button class="tab" data-tab="list" type="button">List</button>
   </div>
 
   <main class="split">
@@ -60,7 +57,7 @@
         <span class="legend-item"><i class="legend-dot is-user" aria-hidden="true"></i>Community-added</span>
       </div>
     </section>
-    <section class="pane pane-list" id="pane-list">
+    <section class="pane pane-list" id="pane-list" aria-label="Startup list panel">
       <div class="list-head">
         <span class="list-count" id="list-count">Loading…</span>
         <label class="sort">

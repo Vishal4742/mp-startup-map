@@ -149,8 +149,22 @@ body {
 .add-btn:hover { filter: brightness(1.06); }
 .add-btn:active { transform: translateY(1px); }
 
-/* ---------- Tabs (mobile only) ---------- */
-.tabs { display: none; }
+/* ---------- List toggle ---------- */
+.toggle-list {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 9px 14px; border-radius: var(--radius); cursor: pointer;
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border); font-size: 13px; font-weight: 600;
+  transition: color .1s var(--ease-out), border-color .1s var(--ease-out), background .1s var(--ease-out), transform .05s var(--ease-out);
+}
+.toggle-list .count {
+  padding: 1px 7px; border-radius: 999px; font-size: 11px; font-variant-numeric: tabular-nums;
+  background: var(--bg-3); color: var(--text-dim); border: 1px solid var(--border);
+}
+.toggle-list:hover { color: var(--text); border-color: var(--accent); }
+.toggle-list:active { transform: translateY(1px); }
+.toggle-list[aria-expanded="true"] { color: var(--accent-2); border-color: var(--accent); background: var(--accent-soft); }
+.toggle-list[aria-expanded="true"] .count { color: var(--accent-2); border-color: rgba(255,143,63,.35); }
 
 /* ---------- Add-startup modal ---------- */
 .modal-backdrop {
@@ -243,18 +257,20 @@ body {
 .toast.good { border-color: rgba(74,222,128,.5); color: #bbf7d0; }
 .toast.bad { border-color: rgba(248,113,113,.5); color: #fecaca; }
 
-/* ---------- Split layout ---------- */
-.split { display: flex; flex: 1; min-height: 0; }
+/* ---------- Layout: full-screen map, list in a toggled side panel ---------- */
+.split { display: flex; flex: 1; min-height: 0; position: relative; }
 .pane { min-height: 0; }
-.pane-map { flex: 0 0 60%; position: relative; }
+.pane-map { flex: 1 1 auto; position: relative; }
 .pane-list {
-  flex: 1 1 40%;
+  flex: 0 0 min(440px, 40%);
+  display: none;
   background: var(--panel);
   border-left: 1px solid var(--border);
   overflow-y: auto;
   position: relative;
   scrollbar-width: thin; scrollbar-color: var(--border) transparent;
 }
+body.show-list .pane-list { display: block; animation: slidein .2s var(--ease-out); }
 #map { width: 100%; height: 100%; background: #0b0f14; }
 
 /* Map legend: what the three pin colours mean, in the map's corner. */
@@ -453,21 +469,10 @@ body {
 @media (max-width: 820px) {
   .stats { order: 3; width: 100%; justify-content: space-between; }
   .stat { flex: 1; min-width: 0; }
-  .tabs { display: flex; gap: 0; padding: 0 12px; background: var(--bg-2); border-bottom: 1px solid var(--border); }
-  .tab {
-    flex: 1; padding: 11px; background: transparent; border: none;
-    color: var(--text-dim); font-size: 14px; font-weight: 600; cursor: pointer;
-    border-bottom: 2px solid transparent;
-  }
-  .tab.active { color: var(--accent-2); border-bottom-color: var(--accent); }
-
-  .split { position: relative; }
-  .pane-map, .pane-list { flex: 1 1 100%; }
-  .pane-map { display: block; }
-  .pane-list { border-left: none; }
-  body.show-list .pane-map { display: none; }
-  body.show-list .pane-list { display: block; }
-  body:not(.show-list) .pane-list { display: none; }
+  /* The list covers the map on small screens (above Leaflet's controls at
+     z-index 1000, below the detail drawer at 1200); choosing a card closes it. */
+  body.show-list .pane-list { position: absolute; inset: 0; width: 100%; border-left: none; z-index: 1100; }
+  .toggle-list, .add-btn { flex: 1; justify-content: center; }
 
   .form-grid { grid-template-columns: 1fr; }
   .modal { padding: 16px; }
