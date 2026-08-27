@@ -1,0 +1,22 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "true",
+  "buildCommand": "mkdir -p site/data site/shared && cp index.html app.js style.css site/ && cp shared/normalize.js site/shared/ && cp data/tech_registry.json data/enriched.json data/district_coords.json site/data/",
+  "outputDirectory": "site",
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" },
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "no-referrer" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
+    },
+    {
+      "source": "/data/(.*)",
+      "headers": [ { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" } ]
+    }
+  ]
+}

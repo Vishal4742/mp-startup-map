@@ -22,3 +22,6 @@ Thumbs.db
 # Local env / secrets (MP_ADMIN_TOKEN etc.)
 .env
 .env.*
+
+# Vercel / Pages static build output
+site/
